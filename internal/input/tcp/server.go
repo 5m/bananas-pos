@@ -7,11 +7,11 @@ import (
 	"io"
 	"log"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"bananas-pos/internal/input"
 	"bananas-pos/internal/job"
 	"bananas-pos/internal/target"
 )
@@ -95,7 +95,7 @@ func (s *Server) handleConn(conn net.Conn) {
 		return
 	}
 
-	labels := splitLabels(string(raw))
+	labels := input.SplitLabels(string(raw))
 	if len(labels) == 0 {
 		labels = []string{string(raw)}
 	}
@@ -118,26 +118,4 @@ func (s *Server) handleConn(conn net.Conn) {
 	}
 
 	_, _ = io.WriteString(conn, "OK\n")
-}
-
-func splitLabels(raw string) []string {
-	var labels []string
-	searchFrom := 0
-
-	for {
-		start := strings.Index(raw[searchFrom:], "^XA")
-		if start < 0 {
-			return labels
-		}
-		start += searchFrom
-
-		end := strings.Index(raw[start:], "^XZ")
-		if end < 0 {
-			return labels
-		}
-		end += start + len("^XZ")
-
-		labels = append(labels, raw[start:end])
-		searchFrom = end
-	}
 }

@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bananas-pos/internal/input"
 	"bananas-pos/internal/job"
 	"bananas-pos/internal/meta"
 	"bananas-pos/internal/target"
@@ -102,24 +103,38 @@ func (s *Server) handlePrint(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	job := job.PrintJob{
-		ID:          fmt.Sprintf("http-%d", s.jobSeq.Add(1)),
-		Raw:         body,
-		ContentType: contentTypeOrDefault(req.Header.Get("Content-Type")),
-		Source:      "http",
-		CreatedAt:   time.Now(),
+	labels := input.SplitLabels(string(body))
+	if len(labels) == 0 {
+		labels = []string{string(body)}
 	}
 
-	if err := s.target.Send(req.Context(), job); err != nil {
-		log.Printf("http print job failed: %v", err)
-		http.Error(rw, err.Error(), http.StatusBadGateway)
-		return
+	contentType := contentTypeOrDefault(req.Header.Get("Content-Type"))
+	createdAt := time.Now()
+	acceptedIDs := make([]string, 0, len(labels))
+
+	for _, label := range labels {
+		printJob := job.PrintJob{
+			ID:          fmt.Sprintf("http-%d", s.jobSeq.Add(1)),
+			Raw:         []byte(label),
+			ContentType: contentType,
+			Source:      "http",
+			CreatedAt:   createdAt,
+		}
+
+		if err := s.target.Send(req.Context(), printJob); err != nil {
+			log.Printf("http print job failed: %v", err)
+			http.Error(rw, err.Error(), http.StatusBadGateway)
+			return
+		}
+
+		acceptedIDs = append(acceptedIDs, printJob.ID)
 	}
 
 	rw.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(rw).Encode(map[string]string{
+	_ = json.NewEncoder(rw).Encode(map[string]any{
 		"status": "accepted",
-		"id":     job.ID,
+		"count":  len(acceptedIDs),
+		"ids":    acceptedIDs,
 		"target": s.target.Name(),
 	})
 }

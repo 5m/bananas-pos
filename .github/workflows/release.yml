@@ -112,10 +112,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
-      - name: Install Fyne packaging tool
-        if: runner.os == 'macOS'
-        run: go install fyne.io/tools/cmd/fyne@v2.7.3
-
       - name: Install Windows build dependencies
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2

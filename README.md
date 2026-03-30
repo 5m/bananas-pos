@@ -16,7 +16,7 @@ Incoming payloads are split into labels and forwarded as `job.PrintJob` units to
 
 ## Target modes
 
-- `system-print-queue`: placeholder for native spool integration, currently not implemented
+- `system-print-queue`: submits raw label payloads to the host platform print queue and checks that a default printer is available
 - `http-proxy`: forwards jobs to another HTTP endpoint and can proxy HTTP traffic through to that upstream
 - `emulator`: renders label previews in a local window via Labelary
 

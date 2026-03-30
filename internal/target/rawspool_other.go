@@ -1,3 +1,5 @@
+//go:build !windows && !darwin && !linux
+
 package target
 
 import (

@@ -65,21 +65,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            label: Linux
-            artifact_name: bananas-pos-linux-amd64
-            archive_suffix: linux-amd64.tar.gz
-            make_target: package-linux
-          - os: macos-15
-            label: macOS
-            artifact_name: bananas-pos-macos-arm64
-            archive_suffix: macos-arm64.tar.gz
-            make_target: package-macos
           - os: windows-latest
             label: Windows
             artifact_name: bananas-pos-windows-amd64
             archive_suffix: windows-amd64.zip
             make_target: package-windows
+          - os: macos-15
+            label: macOS
+            artifact_name: bananas-pos-macos-arm64
+            archive_suffix: macos-arm64.tar.gz
+            make_target: package-macos
+          # - os: ubuntu-latest
+          #   label: Linux
+          #   artifact_name: bananas-pos-linux-amd64
+          #   archive_suffix: linux-amd64.tar.gz
+          #   make_target: package-linux
 
     steps:
       - name: Check out repository

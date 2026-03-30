@@ -80,16 +80,11 @@ jobs:
             artifact_name: bananas-pos-linux-amd64
             archive_suffix: linux-amd64.tar.gz
             make_target: package-linux
-          - os: macos-15-intel
-            label: macOS Intel
-            artifact_name: bananas-pos-macos-amd64
-            archive_suffix: macos-amd64.tar.gz
-            make_target: package-macos-amd64
           - os: macos-15
-            label: macOS Apple Silicon
-            artifact_name: bananas-pos-macos-arm64
+            label: macOS
+            artifact_name: bananas-pos-macos
             archive_suffix: macos-arm64.tar.gz
-            make_target: package-macos-arm64
+            make_target: package-macos
           - os: windows-latest
             label: Windows
             artifact_name: bananas-pos-windows-amd64

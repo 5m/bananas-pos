@@ -11,16 +11,12 @@ WINDOWS_SYSO := cmd/bananas-pos/bananas-pos_windows_amd64.syso
 VERSION := $(shell sed -n 's/^var Version = "\(.*\)"$$/\1/p' internal/meta/meta.go)
 FYNE_CLI_VERSION := v1.7.0
 FYNE_BIN := $(LOCAL_BIN_DIR)/fyne
-MACOSX_DEPLOYMENT_TARGET := 10.14
-MACOS_CC_WRAPPER := $(PWD)/scripts/clang-macos14.sh
-MACOS_CXX_WRAPPER := $(PWD)/scripts/clang++-macos14.sh
 
 LINUX_ARCHIVE := $(BINARY_NAME)-$(VERSION)-linux-amd64.tar.gz
-MACOS_AMD64_ARCHIVE := $(BINARY_NAME)-$(VERSION)-macos-amd64.tar.gz
-MACOS_ARM64_ARCHIVE := $(BINARY_NAME)-$(VERSION)-macos-arm64.tar.gz
+MACOS_ARCHIVE := $(BINARY_NAME)-$(VERSION)-macos-arm64.tar.gz
 WINDOWS_ARCHIVE := $(BINARY_NAME)-$(VERSION)-windows-amd64.zip
 
-.PHONY: version clean build package-linux package-macos-app package-macos-amd64 package-macos-arm64 package-windows
+.PHONY: version clean build run package-linux macos-app package-macos package-windows
 
 version:
 	@printf '%s\n' "$(VERSION)"
@@ -36,30 +32,24 @@ build:
 	mkdir -p "$(DIST_DIR)"
 	go build -o "$(DIST_DIR)/$(BINARY_NAME)" $(CMD_DIR)
 
+run: build
+	BANANAS_POS_DEBUG=1 "$(DIST_DIR)/$(BINARY_NAME)"
+
 package-linux:
 	mkdir -p "$(DIST_DIR)"
 	go build -o "$(DIST_DIR)/$(BINARY_NAME)" $(CMD_DIR)
 	tar -C "$(DIST_DIR)" -czf "$(LINUX_ARCHIVE)" "$(BINARY_NAME)"
 
-package-macos-app: $(FYNE_BIN) $(MACOS_APP_ICON_ICNS)
+macos-app: build $(FYNE_BIN) $(MACOS_APP_ICON_ICNS)
 	mkdir -p "$(DIST_DIR)"
 	rm -rf "cmd/bananas-pos/$(APP_NAME).app" "$(DIST_DIR)/$(APP_NAME).app"
 	cd cmd/bananas-pos && \
-		MACOSX_DEPLOYMENT_TARGET="$(MACOSX_DEPLOYMENT_TARGET)" \
-		CC="$(MACOS_CC_WRAPPER)" \
-		CXX="$(MACOS_CXX_WRAPPER)" \
-		CGO_CFLAGS="-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" \
-		CGO_CXXFLAGS="-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" \
-		CGO_LDFLAGS="-mmacosx-version-min=$(MACOSX_DEPLOYMENT_TARGET)" \
-		../../$(FYNE_BIN) package -os darwin -release -icon ../../$(MACOS_APP_ICON_PNG) -name "$(APP_NAME)"
+		../../$(FYNE_BIN) package -os darwin -release -icon ../../$(MACOS_APP_ICON_PNG) -name "$(APP_NAME)" -executable ../../$(DIST_DIR)/$(BINARY_NAME)
 	cp "$(MACOS_APP_ICON_ICNS)" "cmd/bananas-pos/$(APP_NAME).app/Contents/Resources/icon.icns"
 	mv "cmd/bananas-pos/$(APP_NAME).app" "$(DIST_DIR)/"
 
-package-macos-amd64: package-macos-app
-	tar -C "$(DIST_DIR)" -czf "$(MACOS_AMD64_ARCHIVE)" "$(APP_NAME).app"
-
-package-macos-arm64: package-macos-app
-	tar -C "$(DIST_DIR)" -czf "$(MACOS_ARM64_ARCHIVE)" "$(APP_NAME).app"
+package-macos: macos-app
+	tar -C "$(DIST_DIR)" -czf "$(MACOS_ARCHIVE)" "$(APP_NAME).app"
 
 package-windows:
 	pwsh -NoProfile -Command "$$ErrorActionPreference = 'Stop'; New-Item -ItemType Directory -Force -Path '$(DIST_DIR)' | Out-Null; $$runnerMingw = Join-Path $$env:RUNNER_TEMP 'msys64\mingw64\bin'; if ($$env:RUNNER_TEMP -and (Test-Path $$runnerMingw)) { $$env:Path = $$runnerMingw + ';' + $$env:Path }; $$fallbackMingw = 'C:\msys64\mingw64\bin'; if (Test-Path $$fallbackMingw) { $$env:Path = $$fallbackMingw + ';' + $$env:Path }; $$env:CC = 'gcc'; $$env:CXX = 'g++'; rsrc -ico '$(ICON_ICO)' -o '$(WINDOWS_SYSO)'; go build -o '$(DIST_DIR)/$(BINARY_NAME).exe' $(CMD_DIR); Compress-Archive -Path '$(DIST_DIR)/$(BINARY_NAME).exe' -DestinationPath '$(WINDOWS_ARCHIVE)' -Force; Remove-Item '$(WINDOWS_SYSO)' -Force"

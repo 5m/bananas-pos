@@ -114,7 +114,7 @@ jobs:
 
       - name: Install Fyne packaging tool
         if: runner.os == 'macOS'
-        run: go install fyne.io/tools/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@v2.5.4
 
       - name: Install Windows build dependencies
         if: runner.os == 'Windows'

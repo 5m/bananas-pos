@@ -1,0 +1,183 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BINARY_NAME: bananas-printer
+
+jobs:
+  detect-version-change:
+    name: Detect version change
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.detect.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version="$(sed -n 's/^var Version = "\(.*\)"$/\1/p' internal/meta/meta.go)"
+          if [[ -z "$version" ]]; then
+            echo "Version not found in internal/meta/meta.go" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *a* || "$version" == *b* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect version line change
+        id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          before_sha="${{ github.event.before }}"
+          after_sha="${{ github.sha }}"
+
+          if [[ -z "$before_sha" || "$before_sha" == "0000000000000000000000000000000000000000" ]]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff "$before_sha" "$after_sha" -- internal/meta/meta.go | grep -Eq '^[+-]var Version = '; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: detect-version-change
+    if: needs.detect-version-change.outputs.should_release == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+            artifact_name: bananas-printer-linux-amd64
+            archive_suffix: linux-amd64.tar.gz
+            binary_suffix: ""
+          - os: macos-13
+            label: macOS
+            artifact_name: bananas-printer-macos-amd64
+            archive_suffix: macos-amd64.tar.gz
+            binary_suffix: ""
+          - os: windows-latest
+            label: Windows
+            artifact_name: bananas-printer-windows-amd64
+            archive_suffix: windows-amd64.zip
+            binary_suffix: ".exe"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
+      - name: Install Windows build dependencies
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+
+      - name: Build binary
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          go build -o "dist/${BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
+
+      - name: Build binary
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist
+          export CC=gcc
+          export CXX=g++
+          go build -o "dist/${BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
+
+      - name: Package release archive
+        if: runner.os != 'Windows'
+        run: |
+          tar -C dist -czf "${BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}" "${BINARY_NAME}${{ matrix.binary_suffix }}"
+
+      - name: Package release archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/${env:BINARY_NAME}${{ matrix.binary_suffix }}" -DestinationPath "${env:BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ env.BINARY_NAME }}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs:
+      - detect-version-change
+      - build
+    if: needs.detect-version-change.outputs.should_release == 'true'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Flatten artifact directory
+        run: |
+          mkdir -p release-files
+          find release-assets -type f -maxdepth 2 -exec mv {} release-files/ \;
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.detect-version-change.outputs.version }}
+          name: v${{ needs.detect-version-change.outputs.version }}
+          prerelease: ${{ needs.detect-version-change.outputs.prerelease }}
+          body: |
+            Automated release for version `${{ needs.detect-version-change.outputs.version }}` from `main`.
+          files: release-files/*
+          overwrite_files: true

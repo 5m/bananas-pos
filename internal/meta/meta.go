@@ -1,5 +1,5 @@
 package meta
 
-const AppName = "Bananas Printer"
+const AppName = "Bananas POS"
 
 var Version = "0.1b6"

@@ -20,7 +20,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"bananas-printer/internal/job"
+	"bananas-pos/internal/job"
 )
 
 type Emulator struct {

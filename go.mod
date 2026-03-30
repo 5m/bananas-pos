@@ -1,4 +1,4 @@
-module bananas-printer
+module bananas-pos
 
 go 1.26
 

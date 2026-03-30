@@ -12,8 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"bananas-printer/internal/job"
-	"bananas-printer/internal/target"
+	"bananas-pos/internal/job"
+	"bananas-pos/internal/meta"
+	"bananas-pos/internal/target"
 )
 
 type Server struct {
@@ -73,8 +74,10 @@ func (s *Server) handleHealth(rw http.ResponseWriter, req *http.Request) {
 	err := s.target.Health(req.Context())
 	status := http.StatusOK
 	response := map[string]any{
-		"status": "ok",
-		"target": s.target.Name(),
+		"name":    meta.AppName,
+		"version": meta.Version,
+		"status":  "ok",
+		"target":  s.target.Name(),
 	}
 	if err != nil {
 		status = http.StatusServiceUnavailable
@@ -130,7 +133,8 @@ func (s *Server) handleRoot(rw http.ResponseWriter, req *http.Request) {
 
 	rw.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(rw).Encode(map[string]any{
-		"name":      "Bananas Printer",
+		"name":      meta.AppName,
+		"version":   meta.Version,
 		"target":    s.target.Name(),
 		"uptime":    time.Since(s.startedAt).String(),
 		"endpoints": []string{"/_/health", "/zpl"},

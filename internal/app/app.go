@@ -18,11 +18,11 @@ import (
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 
-	httpinput "bananas-printer/internal/input/http"
-	tcpinput "bananas-printer/internal/input/tcp"
-	"bananas-printer/internal/meta"
-	"bananas-printer/internal/target"
-	"bananas-printer/internal/trayicon"
+	httpinput "bananas-pos/internal/input/http"
+	tcpinput "bananas-pos/internal/input/tcp"
+	"bananas-pos/internal/meta"
+	"bananas-pos/internal/target"
+	"bananas-pos/internal/trayicon"
 )
 
 type Config struct {
@@ -79,7 +79,7 @@ func modeLabel(mode string) string {
 }
 
 func New(config Config) (*App, error) {
-	fyneApplication := fyneapp.NewWithID("bananas-printer")
+	fyneApplication := fyneapp.NewWithID("bananas-pos")
 	config = loadConfigFromPreferences(fyneApplication.Preferences(), config)
 	config.TargetMode = defaultTargetMode(config.TargetMode)
 	icon := trayicon.Resource()

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"bananas-printer/internal/job"
+	"bananas-pos/internal/job"
 )
 
 type Switcher struct {

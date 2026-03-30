@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"bananas-printer/internal/job"
-	"bananas-printer/internal/target"
+	"bananas-pos/internal/job"
+	"bananas-pos/internal/target"
 )
 
 type Server struct {

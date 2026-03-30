@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/http"
 
-	"bananas-printer/internal/job"
+	"bananas-pos/internal/job"
 )
 
 var ErrNotImplemented = errors.New("target mode not implemented")

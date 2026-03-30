@@ -5,11 +5,11 @@ import (
 	"os"
 	"strconv"
 
-	"bananas-printer/internal/app"
-	"bananas-printer/internal/meta"
-	"bananas-printer/internal/singleinstance"
-	"bananas-printer/internal/trayicon"
-	"bananas-printer/internal/ui"
+	"bananas-pos/internal/app"
+	"bananas-pos/internal/meta"
+	"bananas-pos/internal/singleinstance"
+	"bananas-pos/internal/trayicon"
+	"bananas-pos/internal/ui"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 		return
 	}
 
-	instance, alreadyRunning, err := singleinstance.Acquire("bananas-printer")
+	instance, alreadyRunning, err := singleinstance.Acquire("bananas-pos")
 	if err != nil {
 		log.Fatalf("acquire instance lock: %v", err)
 	}

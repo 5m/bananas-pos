@@ -3,7 +3,7 @@ package target
 import (
 	"context"
 
-	"bananas-printer/internal/job"
+	"bananas-pos/internal/job"
 )
 
 type RawSpool struct{}

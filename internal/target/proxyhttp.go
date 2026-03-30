@@ -9,7 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 
-	"bananas-printer/internal/job"
+	"bananas-pos/internal/job"
 )
 
 type ProxyHTTP struct {

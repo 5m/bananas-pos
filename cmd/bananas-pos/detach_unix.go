@@ -8,7 +8,7 @@ import (
 	"syscall"
 )
 
-const noDetachEnv = "BANANAS_PRINTER_DEBUG"
+const noDetachEnv = "BANANAS_POS_DEBUG"
 
 func detachIfNeeded() (bool, error) {
 	if os.Getenv(noDetachEnv) != "" || !hasInteractiveTerminal() {

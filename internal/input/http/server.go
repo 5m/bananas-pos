@@ -43,7 +43,7 @@ func NewServer(addr string, outputTarget target.Target) *Server {
 
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: loggingMiddleware(mux),
+		Handler: loggingMiddleware(corsMiddleware(mux)),
 	}
 
 	return s
@@ -166,6 +166,30 @@ func contentTypeOrDefault(value string) string {
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
 		log.Printf("http %s %s", req.Method, req.URL.String())
+		next.ServeHTTP(rw, req)
+	})
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
+		headers := rw.Header()
+		headers.Add("Vary", "Origin")
+		headers.Add("Vary", "Access-Control-Request-Method")
+		headers.Add("Vary", "Access-Control-Request-Headers")
+		headers.Set("Access-Control-Allow-Origin", "*")
+		headers.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+		allowHeaders := strings.TrimSpace(req.Header.Get("Access-Control-Request-Headers"))
+		if allowHeaders == "" {
+			allowHeaders = "Content-Type, Authorization"
+		}
+		headers.Set("Access-Control-Allow-Headers", allowHeaders)
+
+		if req.Method == http.MethodOptions {
+			rw.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		next.ServeHTTP(rw, req)
 	})
 }

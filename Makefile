@@ -5,12 +5,12 @@ DIST_DIR := dist
 LOCAL_BIN_DIR := .bin
 ICON_PNG := internal/trayicon/assets/icon.png
 MACOS_APP_ICON_PNG := internal/appicon/assets/icon-macos.png
-MACOS_APP_ICON_ICNS := internal/appicon/assets/icon-macos.icns
 ICON_ICO := internal/trayicon/assets/icon.ico
 WINDOWS_SYSO := cmd/bananas-pos/bananas-pos_windows_amd64.syso
 VERSION := $(shell sed -n 's/^var Version = "\(.*\)"$$/\1/p' internal/meta/meta.go)
 FYNE_CLI_VERSION := v1.7.0
 FYNE_BIN := $(LOCAL_BIN_DIR)/fyne
+MACOS_CODESIGN_IDENTITY ?= -
 
 LINUX_ARCHIVE := $(BINARY_NAME)-$(VERSION)-linux-amd64.tar.gz
 MACOS_ARCHIVE := $(BINARY_NAME)-$(VERSION)-macos-arm64.tar.gz
@@ -40,13 +40,13 @@ package-linux:
 	go build -o "$(DIST_DIR)/$(BINARY_NAME)" $(CMD_DIR)
 	tar -C "$(DIST_DIR)" -czf "$(LINUX_ARCHIVE)" "$(BINARY_NAME)"
 
-macos-app: build $(FYNE_BIN) $(MACOS_APP_ICON_ICNS)
+macos-app: build $(FYNE_BIN)
 	mkdir -p "$(DIST_DIR)"
 	rm -rf "cmd/bananas-pos/$(APP_NAME).app" "$(DIST_DIR)/$(APP_NAME).app"
 	cd cmd/bananas-pos && \
 		../../$(FYNE_BIN) package -os darwin -release -icon ../../$(MACOS_APP_ICON_PNG) -name "$(APP_NAME)" -executable ../../$(DIST_DIR)/$(BINARY_NAME)
-	cp "$(MACOS_APP_ICON_ICNS)" "cmd/bananas-pos/$(APP_NAME).app/Contents/Resources/icon.icns"
 	mv "cmd/bananas-pos/$(APP_NAME).app" "$(DIST_DIR)/"
+	codesign --force --deep --sign "$(MACOS_CODESIGN_IDENTITY)" "$(DIST_DIR)/$(APP_NAME).app"
 
 package-macos: macos-app
 	tar -C "$(DIST_DIR)" -czf "$(MACOS_ARCHIVE)" "$(APP_NAME).app"

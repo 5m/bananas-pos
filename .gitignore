@@ -3,4 +3,6 @@
 .gocache-windows/
 dist/
 /bananas-pos
+/bananas-pos-*.tar.gz
 /bananas-pos.exe
+cmd/bananas-pos/*.app

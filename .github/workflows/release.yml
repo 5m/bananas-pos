@@ -72,7 +72,7 @@ jobs:
             make_target: package-linux
           - os: macos-15
             label: macOS
-            artifact_name: bananas-pos-macos
+            artifact_name: bananas-pos-macos-arm64
             archive_suffix: macos-arm64.tar.gz
             make_target: package-macos
           - os: windows-latest

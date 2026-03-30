@@ -80,10 +80,15 @@ jobs:
             artifact_name: bananas-printer-linux-amd64
             archive_suffix: linux-amd64.tar.gz
             binary_suffix: ""
-          - os: macos-13
-            label: macOS
+          - os: macos-15-intel
+            label: macOS Intel
             artifact_name: bananas-printer-macos-amd64
             archive_suffix: macos-amd64.tar.gz
+            binary_suffix: ""
+          - os: macos-15
+            label: macOS Apple Silicon
+            artifact_name: bananas-printer-macos-arm64
+            archive_suffix: macos-arm64.tar.gz
             binary_suffix: ""
           - os: windows-latest
             label: Windows
@@ -123,12 +128,13 @@ jobs:
 
       - name: Build binary
         if: runner.os == 'Windows'
-        shell: msys2 {0}
+        shell: pwsh
         run: |
-          mkdir -p dist
-          export CC=gcc
-          export CXX=g++
-          go build -o "dist/${BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          "$env:RUNNER_TEMP\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $env:CC = "gcc"
+          $env:CXX = "g++"
+          go build -o "dist/${env:BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
 
       - name: Package release archive
         if: runner.os != 'Windows'

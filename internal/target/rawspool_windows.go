@@ -109,6 +109,14 @@ func (r *RawSpool) Health(context.Context) error {
 	return closePrinter(handle)
 }
 
+func (r *RawSpool) Description(context.Context) (string, error) {
+	printerName, err := defaultPrinterName()
+	if err != nil {
+		return "", fmt.Errorf("resolve default printer: %w", err)
+	}
+	return printerName, nil
+}
+
 func spoolTitle(printJob job.PrintJob) string {
 	if printJob.ID != "" {
 		return printJob.ID

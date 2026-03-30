@@ -64,8 +64,43 @@ func (r *RawSpool) Health(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("check default printer: %w", commandError(err, output))
 	}
+	if _, err := parseDefaultDestination(output); err != nil {
+		return fmt.Errorf("check default printer: %w", err)
+	}
 
 	return nil
+}
+
+func (r *RawSpool) Description(ctx context.Context) (string, error) {
+	output, err := r.runner.Run(ctx, "lpstat", []string{"-d"}, nil)
+	if err != nil {
+		return "", fmt.Errorf("resolve default printer: %w", commandError(err, output))
+	}
+
+	name, err := parseDefaultDestination(output)
+	if err != nil {
+		return "", fmt.Errorf("resolve default printer: %w", err)
+	}
+
+	return name, nil
+}
+
+func parseDefaultDestination(output []byte) (string, error) {
+	message := strings.TrimSpace(string(output))
+	if message == "" {
+		return "", errors.New("default printer output is empty")
+	}
+
+	const prefix = "system default destination:"
+	if strings.HasPrefix(message, prefix) {
+		name := strings.TrimSpace(strings.TrimPrefix(message, prefix))
+		if name == "" {
+			return "", errors.New("default printer name is empty")
+		}
+		return name, nil
+	}
+
+	return "", fmt.Errorf("unexpected default printer output: %s", message)
 }
 
 func spoolTitle(printJob job.PrintJob) string {

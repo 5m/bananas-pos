@@ -251,7 +251,7 @@ func (a *App) showSettings() {
 	if a.settingsWin == nil {
 		window := a.fyneApp.NewWindow(meta.AppName)
 		window.SetIcon(a.icon)
-		window.Resize(fyne.NewSize(360, 220))
+		window.Resize(fyne.NewSize(420, 280))
 		window.SetFixedSize(true)
 		window.SetCloseIntercept(func() {
 			window.Hide()
@@ -266,30 +266,88 @@ func (a *App) showSettings() {
 
 	modeSelect := widget.NewSelect(modeLabels, nil)
 	modeSelect.SetSelected(modeLabel(a.targetMode))
+	targetDetails := widget.NewLabel("")
+	targetDetails.Wrapping = fyne.TextWrapWord
+	updateTargetDetails := func(mode string) {
+		description := a.targetDescription(mode)
+		targetDetails.SetText(description)
+		if strings.TrimSpace(description) == "" {
+			targetDetails.Hide()
+			return
+		}
+		targetDetails.Show()
+	}
+	modeSelect.OnChanged = func(selected string) {
+		updateTargetDetails(modeKeyFromLabel(selected))
+	}
+	updateTargetDetails(a.targetMode)
 
-	httpEnabledCheck := widget.NewCheck("", nil)
+	httpEnabledCheck := widget.NewCheck("API", nil)
 	httpEnabledCheck.SetChecked(a.config.HTTPEnabled)
 
 	httpPortEntry := widget.NewEntry()
 	httpPortEntry.SetText(savedPortOrCurrent(a.fyneApp.Preferences(), prefHTTPPort, a.httpAddr()))
+	httpPortField := container.NewGridWrap(fyne.NewSize(72, httpPortEntry.MinSize().Height), httpPortEntry)
+	httpPortLabel := widget.NewLabel("Port")
+	httpPortRow := container.NewHBox(
+		httpPortLabel,
+		httpPortField,
+	)
 
-	tcpEnabledCheck := widget.NewCheck("", nil)
+	tcpEnabledCheck := widget.NewCheck("TCP", nil)
 	tcpEnabledCheck.SetChecked(a.config.TCPEnabled)
 
 	tcpPortEntry := widget.NewEntry()
 	tcpPortEntry.SetText(savedPortOrCurrent(a.fyneApp.Preferences(), prefTCPPort, a.tcpAddr()))
+	tcpPortField := container.NewGridWrap(fyne.NewSize(72, tcpPortEntry.MinSize().Height), tcpPortEntry)
+	tcpPortLabel := widget.NewLabel("Port")
+	tcpPortRow := container.NewHBox(
+		tcpPortLabel,
+		tcpPortField,
+	)
 
-	note := widget.NewLabel("Input and port changes apply after restart.")
-	note.Wrapping = fyne.TextWrapWord
-	note.Alignment = fyne.TextAlignTrailing
-	note.TextStyle = fyne.TextStyle{Italic: true}
+	updatePortVisibility := func(check *widget.Check, row *fyne.Container) {
+		if check.Checked {
+			row.Show()
+			return
+		}
+		row.Hide()
+	}
+	httpEnabledCheck.OnChanged = func(_ bool) {
+		updatePortVisibility(httpEnabledCheck, httpPortRow)
+	}
+	tcpEnabledCheck.OnChanged = func(_ bool) {
+		updatePortVisibility(tcpEnabledCheck, tcpPortRow)
+	}
+	updatePortVisibility(httpEnabledCheck, httpPortRow)
+	updatePortVisibility(tcpEnabledCheck, tcpPortRow)
 
-	form := widget.NewForm(
-		widget.NewFormItem("Target", modeSelect),
-		widget.NewFormItem("API Enabled", httpEnabledCheck),
-		widget.NewFormItem("API Port", httpPortEntry),
-		widget.NewFormItem("Raw Enabled", tcpEnabledCheck),
-		widget.NewFormItem("Raw Port", tcpPortEntry),
+	sectionTitle := func(text string) fyne.CanvasObject {
+		return widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	}
+	apiRow := container.NewHBox(
+		httpEnabledCheck,
+		layout.NewSpacer(),
+		httpPortRow,
+	)
+	tcpRow := container.NewHBox(
+		tcpEnabledCheck,
+		layout.NewSpacer(),
+		tcpPortRow,
+	)
+	targetCard := widget.NewCard("", "", container.NewVBox(
+		sectionTitle("Print Target"),
+		modeSelect,
+		targetDetails,
+	))
+	inputsCard := widget.NewCard("", "", container.NewVBox(
+		sectionTitle("Server Routes"),
+		apiRow,
+		tcpRow,
+	))
+	settingsContent := container.NewVBox(
+		targetCard,
+		inputsCard,
 	)
 
 	saveButton := widget.NewButton("Save", func() {
@@ -323,6 +381,9 @@ func (a *App) showSettings() {
 		}
 
 		a.settingsWin.Hide()
+		if a.restartRequired(httpEnabledCheck.Checked, httpPort, tcpEnabledCheck.Checked, tcpPort) {
+			dialog.ShowInformation("Restart Required", "Restart the app for API/TCP listener changes to take effect.", a.mainWindow)
+		}
 	})
 
 	cancelButton := widget.NewButton("Cancel", func() {
@@ -335,7 +396,7 @@ func (a *App) showSettings() {
 		container.NewPadded(container.NewHBox(versionLabel, layout.NewSpacer(), cancelButton, saveButton)),
 		nil,
 		nil,
-		container.NewPadded(container.NewVBox(form, note)),
+		container.NewPadded(settingsContent),
 	))
 
 	a.settingsWin.Show()
@@ -444,4 +505,47 @@ func defaultTargetMode(mode string) string {
 		return strings.TrimSpace(mode)
 	}
 	return "system-print-queue"
+}
+
+func (a *App) restartRequired(httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string) bool {
+	if httpEnabled != a.config.HTTPEnabled {
+		return true
+	}
+	if strings.TrimSpace(httpPort) != portFromAddr(a.config.HTTPAddr) {
+		return true
+	}
+	if tcpEnabled != a.config.TCPEnabled {
+		return true
+	}
+	if strings.TrimSpace(tcpPort) != portFromAddr(a.config.TCPAddr) {
+		return true
+	}
+	return false
+}
+
+func (a *App) targetDescription(mode string) string {
+	switch mode {
+	case "system-print-queue":
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		descriptor, ok := a.target.Current().(target.Descriptor)
+		if !ok || mode != a.targetMode {
+			descriptor, ok = any(target.NewRawSpool()).(target.Descriptor)
+			if !ok {
+				return "Unavailable"
+			}
+		}
+
+		description, err := descriptor.Description(ctx)
+		if err != nil {
+			return "Unavailable"
+		}
+
+		return description
+	case "http-proxy":
+		return strings.TrimSpace(a.config.ProxyHTTPURL)
+	default:
+		return ""
+	}
 }

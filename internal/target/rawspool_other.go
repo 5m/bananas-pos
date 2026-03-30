@@ -25,3 +25,7 @@ func (r *RawSpool) Send(context.Context, job.PrintJob) error {
 func (r *RawSpool) Health(context.Context) error {
 	return ErrNotImplemented
 }
+
+func (r *RawSpool) Description(context.Context) (string, error) {
+	return "", ErrNotImplemented
+}

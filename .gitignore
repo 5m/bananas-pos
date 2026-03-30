@@ -1,4 +1,6 @@
+.bin/
 .gocache/
 .gocache-windows/
+dist/
 /bananas-printer
 /bananas-printer.exe

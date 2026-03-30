@@ -79,22 +79,22 @@ jobs:
             label: Linux
             artifact_name: bananas-printer-linux-amd64
             archive_suffix: linux-amd64.tar.gz
-            binary_suffix: ""
+            make_target: package-linux
           - os: macos-15-intel
             label: macOS Intel
             artifact_name: bananas-printer-macos-amd64
             archive_suffix: macos-amd64.tar.gz
-            binary_suffix: ""
+            make_target: package-macos-amd64
           - os: macos-15
             label: macOS Apple Silicon
             artifact_name: bananas-printer-macos-arm64
             archive_suffix: macos-arm64.tar.gz
-            binary_suffix: ""
+            make_target: package-macos-arm64
           - os: windows-latest
             label: Windows
             artifact_name: bananas-printer-windows-amd64
             archive_suffix: windows-amd64.zip
-            binary_suffix: ".exe"
+            make_target: package-windows
 
     steps:
       - name: Check out repository
@@ -114,7 +114,7 @@ jobs:
 
       - name: Install Fyne packaging tool
         if: runner.os == 'macOS'
-        run: go install fyne.io/tools/cmd/fyne@v2.5.4
+        run: go install fyne.io/tools/cmd/fyne@v2.7.3
 
       - name: Install Windows build dependencies
         if: runner.os == 'Windows'
@@ -122,6 +122,7 @@ jobs:
         with:
           update: true
           install: >-
+            make
             mingw-w64-x86_64-gcc
 
       - name: Install Windows resource tool
@@ -129,43 +130,15 @@ jobs:
         shell: pwsh
         run: go install github.com/akavel/rsrc@latest
 
-      - name: Build binary
+      - name: Build package
         if: runner.os != 'Windows'
-        run: |
-          mkdir -p dist
-          go build -o "dist/${BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
+        run: make ${{ matrix.make_target }}
 
-      - name: Build binary
+      - name: Build package
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          "$env:RUNNER_TEMP\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          $env:CC = "gcc"
-          $env:CXX = "g++"
-          rsrc -ico internal/trayicon/assets/icon.ico -o cmd/bananas-printer/bananas-printer_windows_amd64.syso
-          go build -o "dist/${env:BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
-          Remove-Item cmd/bananas-printer/bananas-printer_windows_amd64.syso
-
-      - name: Package release archive
-        if: runner.os == 'Linux'
-        run: |
-          tar -C dist -czf "${BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}" "${BINARY_NAME}${{ matrix.binary_suffix }}"
-
-      - name: Package macOS app bundle
-        if: runner.os == 'macOS'
-        run: |
-          pushd cmd/bananas-printer
-          fyne package -os darwin -release -icon ../../internal/trayicon/assets/icon.png -name "Bananas Printer"
-          popd
-          rm -f "dist/${BINARY_NAME}${{ matrix.binary_suffix }}"
-          mv "cmd/bananas-printer/Bananas Printer.app" dist/
-          tar -C dist -czf "${BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}" "Bananas Printer.app"
-
-      - name: Package release archive
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path "dist/${env:BINARY_NAME}${{ matrix.binary_suffix }}" -DestinationPath "${env:BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}"
+          & "$env:RUNNER_TEMP\msys64\usr\bin\make.exe" "${{ matrix.make_target }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6

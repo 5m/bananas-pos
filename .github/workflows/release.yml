@@ -112,6 +112,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
+      - name: Install Fyne packaging tool
+        if: runner.os == 'macOS'
+        run: go install fyne.io/tools/cmd/fyne@latest
+
       - name: Install Windows build dependencies
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -119,6 +123,11 @@ jobs:
           update: true
           install: >-
             mingw-w64-x86_64-gcc
+
+      - name: Install Windows resource tool
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: go install github.com/akavel/rsrc@latest
 
       - name: Build binary
         if: runner.os != 'Windows'
@@ -134,12 +143,24 @@ jobs:
           "$env:RUNNER_TEMP\msys64\mingw64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           $env:CC = "gcc"
           $env:CXX = "g++"
+          rsrc -ico internal/trayicon/assets/icon.ico -o cmd/bananas-printer/bananas-printer_windows_amd64.syso
           go build -o "dist/${env:BINARY_NAME}${{ matrix.binary_suffix }}" ./cmd/bananas-printer
+          Remove-Item cmd/bananas-printer/bananas-printer_windows_amd64.syso
 
       - name: Package release archive
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         run: |
           tar -C dist -czf "${BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}" "${BINARY_NAME}${{ matrix.binary_suffix }}"
+
+      - name: Package macOS app bundle
+        if: runner.os == 'macOS'
+        run: |
+          pushd cmd/bananas-printer
+          fyne package -os darwin -release -icon ../../internal/trayicon/assets/icon.png -name "Bananas Printer"
+          popd
+          rm -f "dist/${BINARY_NAME}${{ matrix.binary_suffix }}"
+          mv "cmd/bananas-printer/Bananas Printer.app" dist/
+          tar -C dist -czf "${BINARY_NAME}-${{ needs.detect-version-change.outputs.version }}-${{ matrix.archive_suffix }}" "Bananas Printer.app"
 
       - name: Package release archive
         if: runner.os == 'Windows'

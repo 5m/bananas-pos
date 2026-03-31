@@ -6,15 +6,17 @@ import (
 	"sync"
 
 	"bananas-pos/internal/job"
+	jobtransform "bananas-pos/internal/transform"
 )
 
 type Switcher struct {
-	mu      sync.RWMutex
-	current Target
+	mu        sync.RWMutex
+	current   Target
+	transform string
 }
 
-func NewSwitcher(initial Target) *Switcher {
-	return &Switcher{current: initial}
+func NewSwitcher(initial Target, transform string) *Switcher {
+	return &Switcher{current: initial, transform: transform}
 }
 
 func (s *Switcher) Name() string {
@@ -29,8 +31,13 @@ func (s *Switcher) Name() string {
 func (s *Switcher) Send(ctx context.Context, printJob job.PrintJob) error {
 	s.mu.RLock()
 	current := s.current
+	transform := s.transform
 	s.mu.RUnlock()
-	return current.Send(ctx, printJob)
+	transformed, err := jobtransform.Apply(ctx, printJob, transform)
+	if err != nil {
+		return err
+	}
+	return current.Send(ctx, transformed)
 }
 
 func (s *Switcher) Health(ctx context.Context) error {
@@ -50,6 +57,12 @@ func (s *Switcher) Set(next Target) error {
 		return shutdownTarget.Shutdown()
 	}
 	return nil
+}
+
+func (s *Switcher) SetTransform(transform string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.transform = transform
 }
 
 func (s *Switcher) Current() Target {

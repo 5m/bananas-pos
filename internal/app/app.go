@@ -4,24 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	fyneapp "fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/widget"
 
 	httpinput "bananas-pos/internal/input/http"
 	tcpinput "bananas-pos/internal/input/tcp"
 	"bananas-pos/internal/meta"
 	"bananas-pos/internal/target"
+	jobtransform "bananas-pos/internal/transform"
 	"bananas-pos/internal/trayicon"
 )
 
@@ -31,6 +26,7 @@ type Config struct {
 	TCPEnabled   bool
 	TCPAddr      string
 	TargetMode   string
+	Transform    string
 	ProxyHTTPURL string
 	EmulatorDPMM int
 }
@@ -44,6 +40,7 @@ type App struct {
 	settingsWin fyne.Window
 	target      *target.Switcher
 	targetMode  string
+	transform   string
 	httpSrv     *httpinput.Server
 	tcpSrv      *tcpinput.Server
 	trayMenu    *fyne.Menu
@@ -54,6 +51,7 @@ type App struct {
 
 const (
 	prefTargetMode  = "settings.target_mode"
+	prefTransform   = "settings.transform"
 	prefHTTPEnabled = "settings.http_enabled"
 	prefHTTPPort    = "settings.http_port"
 	prefTCPEnabled  = "settings.tcp_enabled"
@@ -69,6 +67,14 @@ var modeOptions = []struct {
 	{key: "emulator", label: "Emulator"},
 }
 
+var transformOptions = []struct {
+	key   string
+	label string
+}{
+	{key: "", label: "None"},
+	{key: jobtransform.TransformEpsonESCPOS, label: "Epson ESC/POS (debug)"},
+}
+
 func modeLabel(mode string) string {
 	for _, option := range modeOptions {
 		if option.key == mode {
@@ -82,6 +88,7 @@ func New(config Config) (*App, error) {
 	fyneApplication := fyneapp.NewWithID("bananas-pos")
 	config = loadConfigFromPreferences(fyneApplication.Preferences(), config)
 	config.TargetMode = defaultTargetMode(config.TargetMode)
+	config.Transform = defaultTransform(config.Transform)
 	icon := trayicon.Resource()
 	fyneApplication.SetIcon(icon)
 
@@ -98,12 +105,13 @@ func New(config Config) (*App, error) {
 	}
 
 	var err error
-	initialTarget, err := app.newTarget(config.TargetMode)
+	initialTarget, err := app.newTarget(config.TargetMode, config.Transform)
 	if err != nil {
 		return nil, err
 	}
-	app.target = target.NewSwitcher(initialTarget)
+	app.target = target.NewSwitcher(initialTarget, activeTransform(config.TargetMode, config.Transform))
 	app.targetMode = config.TargetMode
+	app.transform = config.Transform
 
 	if config.HTTPEnabled {
 		app.httpSrv = httpinput.NewServer(config.HTTPAddr, app.target)
@@ -180,7 +188,7 @@ func (a *App) runServer(name string, start func() error) {
 	}
 }
 
-func (a *App) newTarget(mode string) (target.Target, error) {
+func (a *App) newTarget(mode, _ string) (target.Target, error) {
 	switch mode {
 	case "http-proxy":
 		return target.NewProxyHTTP(a.config.ProxyHTTPURL)
@@ -212,25 +220,33 @@ func (a *App) getExitErr() error {
 	return a.exitErr
 }
 
-func (a *App) switchMode(mode string) {
-	if mode == a.targetMode {
+func (a *App) switchOutput(mode, transform string) {
+	transform = activeTransform(mode, transform)
+	if mode == a.targetMode && transform == a.transform {
 		if mode == "emulator" {
 			a.target.ShowWindow()
 		}
 		return
 	}
 
-	next, err := a.newTarget(mode)
+	next, err := a.newTarget(mode, transform)
 	if err != nil {
-		a.setExitErr(fmt.Errorf("switch target mode: %w", err))
+		a.setExitErr(fmt.Errorf("switch output mode: %w", err))
 		return
 	}
 
 	if err := a.target.Set(next); err != nil {
-		a.setExitErr(fmt.Errorf("switch target mode: %w", err))
+		a.setExitErr(fmt.Errorf("switch output mode: %w", err))
 	}
+	a.target.SetTransform(activeTransform(mode, transform))
 	a.targetMode = mode
+	a.transform = transform
 	a.fyneApp.Preferences().SetString(prefTargetMode, mode)
+	if transform == "" {
+		a.fyneApp.Preferences().RemoveValue(prefTransform)
+	} else {
+		a.fyneApp.Preferences().SetString(prefTransform, transform)
+	}
 	a.refreshTray()
 
 	if mode == "emulator" {
@@ -245,236 +261,6 @@ func (a *App) refreshTray() {
 	a.trayMenu.Refresh()
 	a.desktopApp.SetSystemTrayIcon(a.icon)
 	a.desktopApp.SetSystemTrayMenu(a.trayMenu)
-}
-
-func (a *App) showSettings() {
-	if a.settingsWin == nil {
-		window := a.fyneApp.NewWindow(meta.AppName)
-		window.SetIcon(a.icon)
-		window.Resize(fyne.NewSize(420, 280))
-		window.SetFixedSize(true)
-		window.SetCloseIntercept(func() {
-			window.Hide()
-		})
-		a.settingsWin = window
-	}
-
-	modeLabels := make([]string, 0, len(modeOptions))
-	for _, option := range modeOptions {
-		modeLabels = append(modeLabels, option.label)
-	}
-
-	modeSelect := widget.NewSelect(modeLabels, nil)
-	modeSelect.SetSelected(modeLabel(a.targetMode))
-	targetDetails := widget.NewLabel("")
-	targetDetails.Wrapping = fyne.TextWrapWord
-	updateTargetDetails := func(mode string) {
-		description := a.targetDescription(mode)
-		targetDetails.SetText(description)
-		if strings.TrimSpace(description) == "" {
-			targetDetails.Hide()
-			return
-		}
-		targetDetails.Show()
-	}
-	modeSelect.OnChanged = func(selected string) {
-		updateTargetDetails(modeKeyFromLabel(selected))
-	}
-	updateTargetDetails(a.targetMode)
-
-	httpEnabledCheck := widget.NewCheck("API", nil)
-	httpEnabledCheck.SetChecked(a.config.HTTPEnabled)
-
-	httpPortEntry := widget.NewEntry()
-	httpPortEntry.SetText(savedPortOrCurrent(a.fyneApp.Preferences(), prefHTTPPort, a.httpAddr()))
-	httpPortField := container.NewGridWrap(fyne.NewSize(72, httpPortEntry.MinSize().Height), httpPortEntry)
-	httpPortLabel := widget.NewLabel("Port")
-	httpPortRow := container.NewHBox(
-		httpPortLabel,
-		httpPortField,
-	)
-
-	tcpEnabledCheck := widget.NewCheck("TCP", nil)
-	tcpEnabledCheck.SetChecked(a.config.TCPEnabled)
-
-	tcpPortEntry := widget.NewEntry()
-	tcpPortEntry.SetText(savedPortOrCurrent(a.fyneApp.Preferences(), prefTCPPort, a.tcpAddr()))
-	tcpPortField := container.NewGridWrap(fyne.NewSize(72, tcpPortEntry.MinSize().Height), tcpPortEntry)
-	tcpPortLabel := widget.NewLabel("Port")
-	tcpPortRow := container.NewHBox(
-		tcpPortLabel,
-		tcpPortField,
-	)
-
-	updatePortVisibility := func(check *widget.Check, row *fyne.Container) {
-		if check.Checked {
-			row.Show()
-			return
-		}
-		row.Hide()
-	}
-	httpEnabledCheck.OnChanged = func(_ bool) {
-		updatePortVisibility(httpEnabledCheck, httpPortRow)
-	}
-	tcpEnabledCheck.OnChanged = func(_ bool) {
-		updatePortVisibility(tcpEnabledCheck, tcpPortRow)
-	}
-	updatePortVisibility(httpEnabledCheck, httpPortRow)
-	updatePortVisibility(tcpEnabledCheck, tcpPortRow)
-
-	sectionTitle := func(text string) fyne.CanvasObject {
-		return widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	}
-	apiRow := container.NewHBox(
-		httpEnabledCheck,
-		layout.NewSpacer(),
-		httpPortRow,
-	)
-	tcpRow := container.NewHBox(
-		tcpEnabledCheck,
-		layout.NewSpacer(),
-		tcpPortRow,
-	)
-	targetCard := widget.NewCard("", "", container.NewVBox(
-		sectionTitle("Print Target"),
-		modeSelect,
-		targetDetails,
-	))
-	inputsCard := widget.NewCard("", "", container.NewVBox(
-		sectionTitle("Server Routes"),
-		apiRow,
-		tcpRow,
-	))
-	settingsContent := container.NewVBox(
-		targetCard,
-		inputsCard,
-	)
-
-	saveButton := widget.NewButton("Save", func() {
-		mode := modeKeyFromLabel(modeSelect.Selected)
-		if mode == "" {
-			dialog.ShowError(fmt.Errorf("select a mode"), a.settingsWin)
-			return
-		}
-
-		httpPort := strings.TrimSpace(httpPortEntry.Text)
-		if err := validatePort(httpPort); err != nil {
-			dialog.ShowError(fmt.Errorf("invalid HTTP port: %w", err), a.settingsWin)
-			return
-		}
-
-		tcpPort := strings.TrimSpace(tcpPortEntry.Text)
-		if err := validatePort(tcpPort); err != nil {
-			dialog.ShowError(fmt.Errorf("invalid TCP port: %w", err), a.settingsWin)
-			return
-		}
-
-		prefs := a.fyneApp.Preferences()
-		prefs.SetString(prefTargetMode, mode)
-		prefs.SetBool(prefHTTPEnabled, httpEnabledCheck.Checked)
-		prefs.SetString(prefHTTPPort, httpPort)
-		prefs.SetBool(prefTCPEnabled, tcpEnabledCheck.Checked)
-		prefs.SetString(prefTCPPort, tcpPort)
-
-		if mode != a.targetMode {
-			a.switchMode(mode)
-		}
-
-		a.settingsWin.Hide()
-		if a.restartRequired(httpEnabledCheck.Checked, httpPort, tcpEnabledCheck.Checked, tcpPort) {
-			dialog.ShowInformation("Restart Required", "Restart the app for API/TCP listener changes to take effect.", a.mainWindow)
-		}
-	})
-
-	cancelButton := widget.NewButton("Cancel", func() {
-		a.settingsWin.Hide()
-	})
-	versionLabel := widget.NewLabel("Version: " + meta.Version)
-
-	a.settingsWin.SetContent(container.NewBorder(
-		nil,
-		container.NewPadded(container.NewHBox(versionLabel, layout.NewSpacer(), cancelButton, saveButton)),
-		nil,
-		nil,
-		container.NewPadded(settingsContent),
-	))
-
-	a.settingsWin.Show()
-	a.settingsWin.RequestFocus()
-}
-
-func loadConfigFromPreferences(prefs fyne.Preferences, config Config) Config {
-	if mode := strings.TrimSpace(prefs.String(prefTargetMode)); mode != "" {
-		if isValidTargetMode(mode) {
-			config.TargetMode = mode
-		} else {
-			prefs.RemoveValue(prefTargetMode)
-		}
-	}
-
-	config.HTTPEnabled = prefs.BoolWithFallback(prefHTTPEnabled, config.HTTPEnabled)
-	if port := strings.TrimSpace(prefs.String(prefHTTPPort)); port != "" {
-		if addr, err := replacePort(config.HTTPAddr, port); err == nil {
-			config.HTTPAddr = addr
-		}
-	}
-
-	config.TCPEnabled = prefs.BoolWithFallback(prefTCPEnabled, config.TCPEnabled)
-	if port := strings.TrimSpace(prefs.String(prefTCPPort)); port != "" {
-		if addr, err := replacePort(config.TCPAddr, port); err == nil {
-			config.TCPAddr = addr
-		}
-	}
-
-	return config
-}
-
-func savedPortOrCurrent(prefs fyne.Preferences, key, addr string) string {
-	if port := strings.TrimSpace(prefs.String(key)); port != "" {
-		return port
-	}
-	return portFromAddr(addr)
-}
-
-func portFromAddr(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
-	if err == nil {
-		_ = host
-		return port
-	}
-	return strings.TrimPrefix(addr, ":")
-}
-
-func replacePort(addr, port string) (string, error) {
-	if strings.HasPrefix(addr, ":") || !strings.Contains(addr, ":") {
-		return ":" + port, nil
-	}
-
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return "", err
-	}
-	return net.JoinHostPort(host, port), nil
-}
-
-func validatePort(value string) error {
-	port, err := strconv.Atoi(value)
-	if err != nil {
-		return err
-	}
-	if port < 1 || port > 65535 {
-		return fmt.Errorf("must be between 1 and 65535")
-	}
-	return nil
-}
-
-func modeKeyFromLabel(label string) string {
-	for _, option := range modeOptions {
-		if option.label == label {
-			return option.key
-		}
-	}
-	return ""
 }
 
 func (a *App) httpAddr() string {
@@ -500,6 +286,15 @@ func isValidTargetMode(mode string) bool {
 	return false
 }
 
+func isValidTransform(transform string) bool {
+	for _, option := range transformOptions {
+		if option.key == strings.TrimSpace(transform) {
+			return true
+		}
+	}
+	return false
+}
+
 func defaultTargetMode(mode string) string {
 	if isValidTargetMode(mode) {
 		return strings.TrimSpace(mode)
@@ -507,45 +302,16 @@ func defaultTargetMode(mode string) string {
 	return "system-print-queue"
 }
 
-func (a *App) restartRequired(httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string) bool {
-	if httpEnabled != a.config.HTTPEnabled {
-		return true
+func defaultTransform(transform string) string {
+	if isValidTransform(transform) {
+		return strings.TrimSpace(transform)
 	}
-	if strings.TrimSpace(httpPort) != portFromAddr(a.config.HTTPAddr) {
-		return true
-	}
-	if tcpEnabled != a.config.TCPEnabled {
-		return true
-	}
-	if strings.TrimSpace(tcpPort) != portFromAddr(a.config.TCPAddr) {
-		return true
-	}
-	return false
+	return ""
 }
 
-func (a *App) targetDescription(mode string) string {
-	switch mode {
-	case "system-print-queue":
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-
-		descriptor, ok := a.target.Current().(target.Descriptor)
-		if !ok || mode != a.targetMode {
-			descriptor, ok = any(target.NewRawSpool()).(target.Descriptor)
-			if !ok {
-				return "Unavailable"
-			}
-		}
-
-		description, err := descriptor.Description(ctx)
-		if err != nil {
-			return "Unavailable"
-		}
-
-		return description
-	case "http-proxy":
-		return strings.TrimSpace(a.config.ProxyHTTPURL)
-	default:
+func activeTransform(mode, transform string) string {
+	if mode != "system-print-queue" {
 		return ""
 	}
+	return defaultTransform(transform)
 }

@@ -6,11 +6,7 @@ import (
 	"fmt"
 	"image/color"
 	"image/png"
-	"io"
 	"net/http"
-	"net/url"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +17,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"bananas-pos/internal/job"
+	jobtransform "bananas-pos/internal/transform"
 )
 
 type Emulator struct {
@@ -46,16 +43,16 @@ type Emulator struct {
 }
 
 const (
-	defaultPreviewWidthPx  = 228
-	defaultPreviewHeightPx = 140
-	windowWidthSlackPx     = 10
+	windowWidthSlackPx      = 10
+	defaultEmulatorWidthPx  = 228
+	defaultEmulatorHeightPx = 140
 )
 
 func NewEmulator(app fyne.App, icon fyne.Resource, dpmm int, onClose func()) *Emulator {
 	header := container.NewVBox()
 	stack := container.NewVBox()
 	scroll := container.NewVScroll(stack)
-	defaultHeightMM := float64(defaultPreviewHeightPx*2) / float64(dpmm)
+	defaultHeightMM := float64(defaultEmulatorHeightPx*2) / float64(dpmm)
 	emulator := &Emulator{
 		client:           &http.Client{},
 		dpmm:             dpmm,
@@ -65,8 +62,8 @@ func NewEmulator(app fyne.App, icon fyne.Resource, dpmm int, onClose func()) *Em
 		header:           header,
 		stack:            stack,
 		scroll:           scroll,
-		width:            defaultPreviewWidthPx,
-		defaultWidth:     defaultPreviewWidthPx,
+		width:            defaultEmulatorWidthPx,
+		defaultWidth:     defaultEmulatorWidthPx,
 		maxHeight:        float32(defaultHeightMM * float64(dpmm) * 2.5),
 		defaultMaxHeight: float32(defaultHeightMM * float64(dpmm) * 2.5),
 	}
@@ -194,20 +191,10 @@ func (e *Emulator) previewSize(widthPx, heightPx int, widthMM, heightMM float64)
 	return fyne.NewSize(float32(widthPx)*scale, float32(heightPx)*scale)
 }
 
-func zebraPreviewURL(zpl string, dpmm int, widthMM, heightMM float64) string {
-	return fmt.Sprintf(
-		"https://api.labelary.com/v1/printers/%ddpmm/labels/%sx%s/0/%s",
-		dpmm,
-		strconv.FormatFloat(widthMM/25.4, 'f', -1, 64),
-		strconv.FormatFloat(heightMM/25.4, 'f', -1, 64),
-		url.PathEscape(zpl),
-	)
-}
-
 func (e *Emulator) processJob(printJob job.PrintJob) error {
-	labelWidthMM, labelHeightMM := e.labelSizeMM(string(printJob.Raw))
+	labelWidthMM, labelHeightMM := jobtransform.LabelSizeMM(string(printJob.Raw), e.dpmm)
 
-	pngBytes, err := e.fetchPreview(string(printJob.Raw), labelWidthMM, labelHeightMM)
+	pngBytes, err := jobtransform.FetchLabelaryPreview(context.Background(), e.client, string(printJob.Raw), e.dpmm)
 	if err != nil {
 		return err
 	}
@@ -312,107 +299,4 @@ func newDashedSeparator(width float32) fyne.CanvasObject {
 	separator := container.NewWithoutLayout(segments...)
 	separator.Resize(fyne.NewSize(width, lineHeight))
 	return separator
-}
-
-func (e *Emulator) fetchPreview(zpl string, widthMM, heightMM float64) ([]byte, error) {
-	previewURL := zebraPreviewURL(zpl, e.dpmm, widthMM, heightMM)
-
-	for attempt := 0; attempt < 3; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, previewURL, nil)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-
-		resp, err := e.client.Do(req)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			body, readErr := io.ReadAll(resp.Body)
-			resp.Body.Close()
-			cancel()
-			if readErr != nil {
-				return nil, readErr
-			}
-			return body, nil
-		}
-
-		retryDelay := retryAfterDelay(resp.Header.Get("Retry-After"))
-		statusErr := &httpError{statusCode: resp.StatusCode, status: resp.Status}
-		resp.Body.Close()
-		cancel()
-
-		if resp.StatusCode != http.StatusTooManyRequests || attempt == 2 {
-			return nil, statusErr
-		}
-
-		timer := time.NewTimer(retryDelay)
-		select {
-		case <-e.done:
-			timer.Stop()
-			return nil, context.Canceled
-		case <-timer.C:
-		}
-	}
-
-	return nil, nil
-}
-
-func retryAfterDelay(value string) time.Duration {
-	if value == "" {
-		return 2 * time.Second
-	}
-
-	seconds, err := strconv.Atoi(value)
-	if err != nil || seconds <= 0 {
-		return 2 * time.Second
-	}
-	return time.Duration(seconds) * time.Second
-}
-
-func (e *Emulator) labelSizeMM(zpl string) (float64, float64) {
-	widthDots := zplCommandInt(zpl, "^PW")
-	heightDots := zplCommandInt(zpl, "^LL")
-
-	widthMM := float64(defaultPreviewWidthPx*2) / float64(e.dpmm)
-	if widthDots > 0 {
-		widthMM = float64(widthDots) / float64(e.dpmm)
-	}
-
-	heightMM := float64(defaultPreviewHeightPx*2) / float64(e.dpmm)
-	if heightDots > 0 {
-		heightMM = float64(heightDots) / float64(e.dpmm)
-	}
-
-	return widthMM, heightMM
-}
-
-func zplCommandInt(zpl, command string) int {
-	index := strings.Index(zpl, command)
-	if index < 0 {
-		return 0
-	}
-
-	start := index + len(command)
-	end := start
-	for end < len(zpl) {
-		ch := zpl[end]
-		if ch < '0' || ch > '9' {
-			break
-		}
-		end++
-	}
-	if end == start {
-		return 0
-	}
-
-	value, err := strconv.Atoi(zpl[start:end])
-	if err != nil {
-		return 0
-	}
-	return value
 }

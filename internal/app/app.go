@@ -90,11 +90,14 @@ func (a *App) setupTray() {
 	}
 	a.desktopApp = desk
 
+	quitItem := fyne.NewMenuItem("Quit", func() {
+		a.fyneApp.Quit()
+	})
+	quitItem.IsQuit = true
+
 	items := []*fyne.MenuItem{
 		fyne.NewMenuItem("Settings...", a.showSettings),
-		fyne.NewMenuItem("Quit", func() {
-			a.fyneApp.Quit()
-		}),
+		quitItem,
 	}
 
 	a.trayMenu = fyne.NewMenu(meta.AppName, items...)
@@ -203,8 +206,8 @@ func (a *App) refreshTray() {
 		return
 	}
 	a.trayMenu.Refresh()
-	a.desktopApp.SetSystemTrayIcon(a.icon)
 	a.desktopApp.SetSystemTrayMenu(a.trayMenu)
+	a.desktopApp.SetSystemTrayIcon(a.icon)
 }
 
 func (a *App) httpAddr() string {

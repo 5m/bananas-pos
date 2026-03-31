@@ -3,11 +3,13 @@ package target
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"time"
 
 	"bananas-pos/internal/job"
 )
@@ -18,6 +20,8 @@ type ProxyHTTP struct {
 	client    *http.Client
 	proxy     *httputil.ReverseProxy
 }
+
+const proxyHTTPTimeout = 10 * time.Second
 
 func NewProxyHTTP(targetURL string) (*ProxyHTTP, error) {
 	target, err := url.Parse(targetURL)
@@ -39,7 +43,7 @@ func NewProxyHTTP(targetURL string) (*ProxyHTTP, error) {
 	return &ProxyHTTP{
 		targetURL: targetURL,
 		target:    target,
-		client:    &http.Client{},
+		client:    &http.Client{Timeout: proxyHTTPTimeout},
 		proxy:     reverseProxy,
 	}, nil
 }
@@ -86,6 +90,9 @@ func (p *ProxyHTTP) Health(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("upstream health check failed: %s", resp.Status)
+	}
 	return nil
 }
 

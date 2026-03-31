@@ -25,6 +25,8 @@ type Emulator struct {
 	dpmm    int
 	jobs    chan job.PrintJob
 	done    chan struct{}
+	ctx     context.Context
+	cancel  context.CancelFunc
 	onClose func()
 
 	window           fyne.Window
@@ -46,15 +48,19 @@ const (
 	windowWidthSlackPx      = 10
 	defaultEmulatorWidthPx  = 228
 	defaultEmulatorHeightPx = 140
+	emulatorHTTPTimeout     = 10 * time.Second
 )
 
 func NewEmulator(app fyne.App, icon fyne.Resource, dpmm int, onClose func()) *Emulator {
 	header := container.NewVBox()
 	stack := container.NewVBox()
 	scroll := container.NewVScroll(stack)
+	ctx, cancel := context.WithCancel(context.Background())
 	defaultHeightMM := float64(defaultEmulatorHeightPx*2) / float64(dpmm)
 	emulator := &Emulator{
-		client:           &http.Client{},
+		client:           &http.Client{Timeout: emulatorHTTPTimeout},
+		ctx:              ctx,
+		cancel:           cancel,
 		dpmm:             dpmm,
 		jobs:             make(chan job.PrintJob, 128),
 		done:             make(chan struct{}),
@@ -145,6 +151,7 @@ func (e *Emulator) clear() {
 
 func (e *Emulator) Shutdown() error {
 	close(e.done)
+	e.cancel()
 	e.wg.Wait()
 	e.window.Hide()
 	return nil
@@ -194,7 +201,7 @@ func (e *Emulator) previewSize(widthPx, heightPx int, widthMM, heightMM float64)
 func (e *Emulator) processJob(printJob job.PrintJob) error {
 	labelWidthMM, labelHeightMM := jobtransform.LabelSizeMM(string(printJob.Raw), e.dpmm)
 
-	pngBytes, err := jobtransform.FetchLabelaryPreview(context.Background(), e.client, string(printJob.Raw), e.dpmm)
+	pngBytes, err := jobtransform.FetchLabelaryPreview(e.ctx, e.client, string(printJob.Raw), e.dpmm)
 	if err != nil {
 		return err
 	}

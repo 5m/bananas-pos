@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,31 +15,18 @@ import (
 	tcpinput "bananas-pos/internal/input/tcp"
 	"bananas-pos/internal/meta"
 	"bananas-pos/internal/target"
-	jobtransform "bananas-pos/internal/transform"
 	"bananas-pos/internal/trayicon"
 )
 
-type Config struct {
-	HTTPEnabled  bool
-	HTTPAddr     string
-	TCPEnabled   bool
-	TCPAddr      string
-	TargetMode   string
-	Transform    string
-	ProxyHTTPURL string
-	EmulatorDPMM int
-}
-
 type App struct {
-	config      Config
+	baseConfig  Config
+	active      runtimeState
 	fyneApp     fyne.App
 	desktopApp  desktop.App
 	icon        fyne.Resource
 	mainWindow  fyne.Window
 	settingsWin fyne.Window
 	target      *target.Switcher
-	targetMode  string
-	transform   string
 	httpSrv     *httpinput.Server
 	tcpSrv      *tcpinput.Server
 	trayMenu    *fyne.Menu
@@ -49,46 +35,10 @@ type App struct {
 	exitErr error
 }
 
-const (
-	prefTargetMode  = "settings.target_mode"
-	prefTransform   = "settings.transform"
-	prefHTTPEnabled = "settings.http_enabled"
-	prefHTTPPort    = "settings.http_port"
-	prefTCPEnabled  = "settings.tcp_enabled"
-	prefTCPPort     = "settings.tcp_port"
-)
-
-var modeOptions = []struct {
-	key   string
-	label string
-}{
-	{key: "system-print-queue", label: "System Print Queue"},
-	{key: "http-proxy", label: "HTTP Proxy"},
-	{key: "emulator", label: "Emulator"},
-}
-
-var transformOptions = []struct {
-	key   string
-	label string
-}{
-	{key: "", label: "None"},
-	{key: jobtransform.TransformEpsonESCPOS, label: "Epson ESC/POS (debug)"},
-}
-
-func modeLabel(mode string) string {
-	for _, option := range modeOptions {
-		if option.key == mode {
-			return option.label
-		}
-	}
-	return mode
-}
-
 func New(config Config) (*App, error) {
 	fyneApplication := fyneapp.NewWithID("bananas-pos")
-	config = loadConfigFromPreferences(fyneApplication.Preferences(), config)
-	config.TargetMode = defaultTargetMode(config.TargetMode)
-	config.Transform = defaultTransform(config.Transform)
+	settings := loadSettings(fyneApplication.Preferences(), config)
+	config = settings.apply(config)
 	icon := trayicon.Resource()
 	fyneApplication.SetIcon(icon)
 
@@ -98,26 +48,25 @@ func New(config Config) (*App, error) {
 	})
 
 	app := &App{
-		config:     config,
+		baseConfig: config,
+		active:     newRuntimeState(config),
 		fyneApp:    fyneApplication,
 		icon:       icon,
 		mainWindow: mainWindow,
 	}
 
 	var err error
-	initialTarget, err := app.newTarget(config.TargetMode, config.Transform)
+	initialTarget, err := app.newTarget(app.active.TargetMode)
 	if err != nil {
 		return nil, err
 	}
-	app.target = target.NewSwitcher(initialTarget, activeTransform(config.TargetMode, config.Transform))
-	app.targetMode = config.TargetMode
-	app.transform = config.Transform
+	app.target = target.NewSwitcher(initialTarget, activeTransform(app.active.TargetMode, app.active.Transform))
 
-	if config.HTTPEnabled {
-		app.httpSrv = httpinput.NewServer(config.HTTPAddr, app.target)
+	if app.active.HTTPEnabled {
+		app.httpSrv = httpinput.NewServer(app.active.HTTPAddr, app.target)
 	}
-	if config.TCPEnabled {
-		app.tcpSrv = tcpinput.NewServer(config.TCPAddr, app.target)
+	if app.active.TCPEnabled {
+		app.tcpSrv = tcpinput.NewServer(app.active.TCPAddr, app.target)
 	}
 
 	return app, nil
@@ -188,14 +137,14 @@ func (a *App) runServer(name string, start func() error) {
 	}
 }
 
-func (a *App) newTarget(mode, _ string) (target.Target, error) {
+func (a *App) newTarget(mode string) (target.Target, error) {
 	switch mode {
 	case "http-proxy":
-		return target.NewProxyHTTP(a.config.ProxyHTTPURL)
+		return target.NewProxyHTTP(a.baseConfig.ProxyHTTPURL)
 	case "system-print-queue":
 		return target.NewRawSpool(), nil
 	case "emulator":
-		return target.NewEmulator(a.fyneApp, a.icon, a.config.EmulatorDPMM, a.fyneApp.Quit), nil
+		return target.NewEmulator(a.fyneApp, a.icon, a.baseConfig.EmulatorDPMM, a.fyneApp.Quit), nil
 	default:
 		return nil, fmt.Errorf("unknown target mode %q", mode)
 	}
@@ -222,14 +171,14 @@ func (a *App) getExitErr() error {
 
 func (a *App) switchOutput(mode, transform string) {
 	transform = activeTransform(mode, transform)
-	if mode == a.targetMode && transform == a.transform {
+	if mode == a.active.TargetMode && transform == a.active.Transform {
 		if mode == "emulator" {
 			a.target.ShowWindow()
 		}
 		return
 	}
 
-	next, err := a.newTarget(mode, transform)
+	next, err := a.newTarget(mode)
 	if err != nil {
 		a.setExitErr(fmt.Errorf("switch output mode: %w", err))
 		return
@@ -237,16 +186,11 @@ func (a *App) switchOutput(mode, transform string) {
 
 	if err := a.target.Set(next); err != nil {
 		a.setExitErr(fmt.Errorf("switch output mode: %w", err))
+		return
 	}
 	a.target.SetTransform(activeTransform(mode, transform))
-	a.targetMode = mode
-	a.transform = transform
-	a.fyneApp.Preferences().SetString(prefTargetMode, mode)
-	if transform == "" {
-		a.fyneApp.Preferences().RemoveValue(prefTransform)
-	} else {
-		a.fyneApp.Preferences().SetString(prefTransform, transform)
-	}
+	a.active.TargetMode = mode
+	a.active.Transform = transform
 	a.refreshTray()
 
 	if mode == "emulator" {
@@ -267,51 +211,12 @@ func (a *App) httpAddr() string {
 	if a.httpSrv != nil {
 		return a.httpSrv.Addr()
 	}
-	return a.config.HTTPAddr
+	return a.active.HTTPAddr
 }
 
 func (a *App) tcpAddr() string {
 	if a.tcpSrv != nil {
 		return a.tcpSrv.Addr()
 	}
-	return a.config.TCPAddr
-}
-
-func isValidTargetMode(mode string) bool {
-	for _, option := range modeOptions {
-		if option.key == strings.TrimSpace(mode) {
-			return true
-		}
-	}
-	return false
-}
-
-func isValidTransform(transform string) bool {
-	for _, option := range transformOptions {
-		if option.key == strings.TrimSpace(transform) {
-			return true
-		}
-	}
-	return false
-}
-
-func defaultTargetMode(mode string) string {
-	if isValidTargetMode(mode) {
-		return strings.TrimSpace(mode)
-	}
-	return "system-print-queue"
-}
-
-func defaultTransform(transform string) string {
-	if isValidTransform(transform) {
-		return strings.TrimSpace(transform)
-	}
-	return ""
-}
-
-func activeTransform(mode, transform string) string {
-	if mode != "system-print-queue" {
-		return ""
-	}
-	return defaultTransform(transform)
+	return a.active.TCPAddr
 }

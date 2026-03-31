@@ -102,6 +102,10 @@ func (s *Server) handlePrint(rw http.ResponseWriter, req *http.Request) {
 		http.Error(rw, "failed to read body", http.StatusBadRequest)
 		return
 	}
+	if len(body) == 0 {
+		http.Error(rw, "print payload is empty", http.StatusBadRequest)
+		return
+	}
 
 	labels := input.SplitLabels(string(body))
 	if len(labels) == 0 {

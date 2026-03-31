@@ -48,6 +48,12 @@ func (s *Switcher) Health(ctx context.Context) error {
 }
 
 func (s *Switcher) Set(next Target) error {
+	if starter, ok := next.(Starter); ok {
+		if err := starter.Start(); err != nil {
+			return err
+		}
+	}
+
 	s.mu.Lock()
 	prev := s.current
 	s.current = next

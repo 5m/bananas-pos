@@ -8,17 +8,24 @@ The app is built with Go and Fyne. At runtime it starts one process, enforces si
 
 - HTTP input defaults to `:9180`
 - TCP input defaults to `:9100`
-- `POST /zpl` submits print payloads over HTTP
-- `GET /_/health` reports basic target health
+- `POST /zpl` submits print payloads over HTTP and rejects empty payloads
+- `GET /_/health` reports target health and returns a non-200 response when the active target is unhealthy
 - Browser access to the HTTP server is CORS-enabled
 
 Incoming payloads are split into labels and forwarded as `job.PrintJob` units to the active target.
 
+The tray settings window persists the selected target mode, transform, and listener ports between launches. Output mode changes apply immediately. HTTP/TCP listener changes are saved but require an app restart to take effect.
+
 ## Target modes
 
 - `system-print-queue`: submits raw label payloads to the host platform print queue and checks that a default printer is available
-- `http-proxy`: forwards jobs to another HTTP endpoint and can proxy HTTP traffic through to that upstream
+- `http-proxy`: forwards jobs to another HTTP endpoint, proxies HTTP traffic through to that upstream, and reports unhealthy if the upstream returns a non-2xx health response
 - `emulator`: renders label previews in a local window via Labelary
+
+## Transforms
+
+- `None`: forwards incoming payloads unchanged
+- `Epson ESC/POS (debug)`: available for `system-print-queue`; renders ZPL through Labelary and converts the preview into ESC/POS raster output
 
 ## Configuration
 

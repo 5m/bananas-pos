@@ -150,6 +150,13 @@ func (a *App) showSettings() {
 	sectionTitle := func(text string) fyne.CanvasObject {
 		return widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	}
+	sectionHeader := func(title string, trailing fyne.CanvasObject) fyne.CanvasObject {
+		objects := []fyne.CanvasObject{sectionTitle(title)}
+		if trailing != nil {
+			objects = append(objects, layout.NewSpacer(), trailing)
+		}
+		return container.NewHBox(objects...)
+	}
 	transformCard := widget.NewCard("", "", container.NewVBox(
 		sectionTitle("Transform"),
 		transformSelect,
@@ -196,6 +203,12 @@ func (a *App) showSettings() {
 
 	apiRow := container.NewHBox(httpEnabledCheck, layout.NewSpacer(), httpPortRow)
 	tcpRow := container.NewHBox(tcpEnabledCheck, layout.NewSpacer(), tcpPortRow)
+	hostIP := hostIPAddress()
+	hostIPLabel := widget.NewLabel("")
+	hostIPLabel.Alignment = fyne.TextAlignTrailing
+	if strings.TrimSpace(hostIP) != "" {
+		hostIPLabel.SetText("Host IP: " + hostIP)
+	}
 	targetCard := widget.NewCard("", "", container.NewVBox(
 		sectionTitle("Print Target"),
 		modeSelect,
@@ -203,7 +216,7 @@ func (a *App) showSettings() {
 		targetDetails,
 	))
 	inputsCard := widget.NewCard("", "", container.NewVBox(
-		sectionTitle("Server Routes"),
+		sectionHeader("Server Routes", hostIPLabel),
 		apiRow,
 		tcpRow,
 	))

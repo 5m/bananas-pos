@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,6 +40,13 @@ func New(config Config) (*App, error) {
 	fyneApplication := fyneapp.NewWithID("bananas-pos")
 	settings := loadSettings(fyneApplication.Preferences(), config)
 	config = settings.apply(config)
+	if config.TargetMode == "system-print-queue" {
+		printerName, err := resolveConfiguredPrinterName(config.PrinterName)
+		if err != nil {
+			return nil, err
+		}
+		config.PrinterName = printerName
+	}
 	icon := trayicon.Resource()
 	fyneApplication.SetIcon(icon)
 
@@ -56,7 +64,7 @@ func New(config Config) (*App, error) {
 	}
 
 	var err error
-	initialTarget, err := app.newTarget(app.active.TargetMode)
+	initialTarget, err := app.newTarget(app.active.TargetMode, app.active.PrinterName)
 	if err != nil {
 		return nil, err
 	}
@@ -140,12 +148,15 @@ func (a *App) runServer(name string, start func() error) {
 	}
 }
 
-func (a *App) newTarget(mode string) (target.Target, error) {
+func (a *App) newTarget(mode, printerName string) (target.Target, error) {
 	switch mode {
 	case "http-proxy":
 		return target.NewProxyHTTP(a.baseConfig.ProxyHTTPURL)
 	case "system-print-queue":
-		return target.NewRawSpool(), nil
+		if strings.TrimSpace(printerName) == "" {
+			return nil, fmt.Errorf("system print queue requires a selected printer")
+		}
+		return target.NewRawSpool(printerName), nil
 	case "emulator":
 		return target.NewEmulator(a.fyneApp, a.icon, a.baseConfig.EmulatorDPMM, a.fyneApp.Quit), nil
 	default:
@@ -172,16 +183,17 @@ func (a *App) getExitErr() error {
 	return a.exitErr
 }
 
-func (a *App) switchOutput(mode, transform string) {
+func (a *App) switchOutput(mode, printerName, transform string) {
 	transform = activeTransform(mode, transform)
-	if mode == a.active.TargetMode && transform == a.active.Transform {
+	printerName = defaultPrinterName(mode, printerName)
+	if mode == a.active.TargetMode && printerName == a.active.PrinterName && transform == a.active.Transform {
 		if mode == "emulator" {
 			a.target.ShowWindow()
 		}
 		return
 	}
 
-	next, err := a.newTarget(mode)
+	next, err := a.newTarget(mode, printerName)
 	if err != nil {
 		a.setExitErr(fmt.Errorf("switch output mode: %w", err))
 		return
@@ -193,6 +205,7 @@ func (a *App) switchOutput(mode, transform string) {
 	}
 	a.target.SetTransform(activeTransform(mode, transform))
 	a.active.TargetMode = mode
+	a.active.PrinterName = printerName
 	a.active.Transform = transform
 	a.refreshTray()
 
@@ -222,4 +235,29 @@ func (a *App) tcpAddr() string {
 		return a.tcpSrv.Addr()
 	}
 	return a.active.TCPAddr
+}
+
+func resolveConfiguredPrinterName(printerName string) (string, error) {
+	printerName = strings.TrimSpace(printerName)
+	if printerName != "" {
+		return printerName, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	descriptor, ok := any(target.NewRawSpool("")).(target.Descriptor)
+	if !ok {
+		return "", fmt.Errorf("system print queue does not expose printer details")
+	}
+
+	printerName, err := descriptor.Description(ctx)
+	if err != nil {
+		return "", fmt.Errorf("resolve default printer: %w", err)
+	}
+	printerName = strings.TrimSpace(printerName)
+	if printerName == "" {
+		return "", fmt.Errorf("resolve default printer: printer name is empty")
+	}
+	return printerName, nil
 }

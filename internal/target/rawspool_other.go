@@ -10,7 +10,7 @@ import (
 
 type RawSpool struct{}
 
-func NewRawSpool() *RawSpool {
+func NewRawSpool(string) *RawSpool {
 	return &RawSpool{}
 }
 
@@ -28,4 +28,8 @@ func (r *RawSpool) Health(context.Context) error {
 
 func (r *RawSpool) Description(context.Context) (string, error) {
 	return "", ErrNotImplemented
+}
+
+func (r *RawSpool) AvailablePrinters(context.Context) ([]string, error) {
+	return nil, ErrNotImplemented
 }

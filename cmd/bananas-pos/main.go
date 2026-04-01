@@ -37,6 +37,7 @@ func main() {
 		TCPEnabled:   envOrDefault("TCP_ENABLED", "true") != "false",
 		TCPAddr:      envOrDefault("TCP_LISTEN_ADDR", ":9100"),
 		TargetMode:   envOrDefault("TARGET_MODE", "system-print-queue"),
+		PrinterName:  envOrDefault("PRINTER_NAME", ""),
 		ProxyHTTPURL: envOrDefault("PROXY_HTTP_URL", envOrDefault("TARGET_URL", "http://localhost:9100")),
 		EmulatorDPMM: envOrDefaultInt("EMULATOR_DPMM", 8),
 	}

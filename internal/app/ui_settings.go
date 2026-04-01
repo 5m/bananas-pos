@@ -41,10 +41,65 @@ func (a *App) showSettings() {
 
 	modeSelect := widget.NewSelect(modeLabels, nil)
 	modeSelect.SetSelected(modeLabel(a.active.TargetMode))
+	printerSelect := widget.NewSelect(nil, nil)
 	targetDetails := widget.NewLabel("")
 	targetDetails.Wrapping = fyne.TextWrapWord
 	transformSelect := widget.NewSelect(transformLabels, nil)
 	transformSelect.SetSelected(transformLabel(defaultTransform(a.active.Transform)))
+	printerOptionsForMode := func(mode string, selected string) []string {
+		var options []string
+		if mode != "system-print-queue" {
+			return options
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		lister, ok := any(target.NewRawSpool(selected)).(target.PrinterLister)
+		if !ok {
+			return options
+		}
+		printers, err := lister.AvailablePrinters(ctx)
+		if err != nil {
+			return options
+		}
+		for _, name := range printers {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			options = append(options, name)
+		}
+		selected = strings.TrimSpace(selected)
+		if selected != "" && !containsOption(options, selected) {
+			options = append(options, selected)
+		}
+		return options
+	}
+	updatePrinterOptions := func(mode string, selected string) {
+		options := printerOptionsForMode(mode, selected)
+		printerSelect.Options = options
+		value := strings.TrimSpace(selected)
+		if mode != "system-print-queue" || len(options) == 0 {
+			printerSelect.ClearSelected()
+			return
+		}
+		if value != "" && containsOption(options, value) {
+			printerSelect.SetSelected(value)
+			return
+		}
+
+		defaultPrinter, err := resolveConfiguredPrinterName("")
+		if err == nil && containsOption(options, defaultPrinter) {
+			printerSelect.SetSelected(defaultPrinter)
+			return
+		}
+		if len(options) == 1 {
+			printerSelect.SetSelected(options[0])
+			return
+		}
+		printerSelect.ClearSelected()
+	}
 	updateTargetDetails := func(mode string) {
 		description := a.targetDescription(mode)
 		targetDetails.SetText(description)
@@ -103,15 +158,37 @@ func (a *App) showSettings() {
 		}
 		transformCard.Hide()
 	}
+	updatePrinterVisibility := func(mode string) {
+		if mode == "system-print-queue" {
+			printerSelect.Show()
+			targetDetails.Hide()
+			return
+		}
+		printerSelect.Hide()
+		updateTargetDetails(mode)
+	}
 	modeSelect.OnChanged = func(selected string) {
 		mode := modeKeyFromLabel(selected)
 		if mode != "system-print-queue" {
+			printerSelect.ClearSelected()
 			transformSelect.SetSelected(transformLabel(""))
 		}
+		currentPrinter := settings.PrinterName
+		if mode == a.active.TargetMode && strings.TrimSpace(a.active.PrinterName) != "" {
+			currentPrinter = a.active.PrinterName
+		}
+		updatePrinterOptions(mode, currentPrinter)
 		updateTargetDetails(mode)
+		updatePrinterVisibility(mode)
 		updateTransformVisibility(mode)
 	}
+	initialPrinter := settings.PrinterName
+	if a.active.TargetMode == "system-print-queue" && strings.TrimSpace(a.active.PrinterName) != "" {
+		initialPrinter = a.active.PrinterName
+	}
+	updatePrinterOptions(a.active.TargetMode, initialPrinter)
 	updateTargetDetails(a.active.TargetMode)
+	updatePrinterVisibility(a.active.TargetMode)
 	updateTransformVisibility(a.active.TargetMode)
 
 	apiRow := container.NewHBox(httpEnabledCheck, layout.NewSpacer(), httpPortRow)
@@ -119,6 +196,7 @@ func (a *App) showSettings() {
 	targetCard := widget.NewCard("", "", container.NewVBox(
 		sectionTitle("Print Target"),
 		modeSelect,
+		printerSelect,
 		targetDetails,
 	))
 	inputsCard := widget.NewCard("", "", container.NewVBox(
@@ -131,6 +209,7 @@ func (a *App) showSettings() {
 	saveButton := widget.NewButton("Save", func() {
 		next, err := settingsFromForm(
 			modeSelect.Selected,
+			printerSelect.Selected,
 			transformSelect.Selected,
 			httpEnabledCheck.Checked,
 			httpPortEntry.Text,
@@ -143,8 +222,8 @@ func (a *App) showSettings() {
 		}
 
 		next.persist(a.fyneApp.Preferences())
-		if next.TargetMode != a.active.TargetMode || next.Transform != a.active.Transform {
-			a.switchOutput(next.TargetMode, next.Transform)
+		if next.TargetMode != a.active.TargetMode || next.PrinterName != a.active.PrinterName || next.Transform != a.active.Transform {
+			a.switchOutput(next.TargetMode, next.PrinterName, next.Transform)
 		}
 
 		a.settingsWin.Hide()
@@ -170,10 +249,14 @@ func (a *App) showSettings() {
 	a.settingsWin.RequestFocus()
 }
 
-func settingsFromForm(modeLabelValue, transformLabelValue string, httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string) (settingsState, error) {
+func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string) (settingsState, error) {
 	mode := modeKeyFromLabel(modeLabelValue)
 	if mode == "" {
 		return settingsState{}, fmt.Errorf("select a mode")
+	}
+	printerName = defaultPrinterName(mode, printerName)
+	if mode == "system-print-queue" && printerName == "" {
+		return settingsState{}, fmt.Errorf("select a printer")
 	}
 
 	selectedTransformLabel := strings.TrimSpace(transformLabelValue)
@@ -201,6 +284,7 @@ func settingsFromForm(modeLabelValue, transformLabelValue string, httpEnabled bo
 		TCPEnabled:  tcpEnabled,
 		TCPPort:     tcpPort,
 		TargetMode:  mode,
+		PrinterName: printerName,
 		Transform:   transform,
 	}, nil
 }
@@ -265,7 +349,7 @@ func (a *App) targetDescription(mode string) string {
 
 		descriptor, ok := a.target.Current().(target.Descriptor)
 		if !ok || mode != a.active.TargetMode {
-			descriptor, ok = any(target.NewRawSpool()).(target.Descriptor)
+			descriptor, ok = any(target.NewRawSpool("")).(target.Descriptor)
 			if !ok {
 				return "Unavailable"
 			}
@@ -282,4 +366,13 @@ func (a *App) targetDescription(mode string) string {
 	default:
 		return ""
 	}
+}
+
+func containsOption(options []string, value string) bool {
+	for _, option := range options {
+		if option == value {
+			return true
+		}
+	}
+	return false
 }

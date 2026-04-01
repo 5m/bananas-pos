@@ -74,8 +74,24 @@ func TestRawSpoolSendUsesLPWithRawOption(t *testing.T) {
 	}
 }
 
+func TestRawSpoolSendUsesConfiguredPrinter(t *testing.T) {
+	runner := &stubRunner{}
+	target := &RawSpool{runner: runner, printerName: "Kitchen"}
+
+	if err := target.Send(context.Background(), job.PrintJob{Raw: []byte("^XA^XZ")}); err != nil {
+		t.Fatalf("Send() error = %v", err)
+	}
+
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(runner.calls))
+	}
+	if got := strings.Join(runner.calls[0].args, " "); got != "-o raw -d Kitchen -t bananas-pos" {
+		t.Fatalf("unexpected args %q", got)
+	}
+}
+
 func TestRawSpoolSendRejectsEmptyPayload(t *testing.T) {
-	target := NewRawSpool()
+	target := NewRawSpool("")
 
 	err := target.Send(context.Background(), job.PrintJob{})
 	if err == nil {
@@ -188,6 +204,41 @@ func TestRawSpoolDescriptionReturnsDefaultPrinterName(t *testing.T) {
 	}
 	call := runner.calls[0]
 	if call.name != "lpstat" || strings.Join(call.args, " ") != "-d" {
+		t.Fatalf("unexpected command: %s %s", call.name, strings.Join(call.args, " "))
+	}
+}
+
+func TestRawSpoolDescriptionReturnsConfiguredPrinterName(t *testing.T) {
+	target := &RawSpool{printerName: "Kitchen"}
+
+	name, err := target.Description(context.Background())
+	if err != nil {
+		t.Fatalf("Description() error = %v", err)
+	}
+	if name != "Kitchen" {
+		t.Fatalf("expected printer name Kitchen, got %q", name)
+	}
+}
+
+func TestRawSpoolAvailablePrintersUsesLPStat(t *testing.T) {
+	runner := &stubRunner{
+		results: []stubResult{{
+			output: []byte("Receipt\nKitchen\nReceipt\n\n"),
+		}},
+	}
+	target := &RawSpool{runner: runner}
+
+	printers, err := target.AvailablePrinters(context.Background())
+	if err != nil {
+		t.Fatalf("AvailablePrinters() error = %v", err)
+	}
+	if got := strings.Join(printers, ","); got != "Receipt,Kitchen" {
+		t.Fatalf("unexpected printers %q", got)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 command, got %d", len(runner.calls))
+	}
+	if call := runner.calls[0]; call.name != "lpstat" || strings.Join(call.args, " ") != "-e" {
 		t.Fatalf("unexpected command: %s %s", call.name, strings.Join(call.args, " "))
 	}
 }

@@ -14,11 +14,11 @@ The app is built with Go and Fyne. At runtime it starts one process, enforces si
 
 Incoming payloads are split into labels and forwarded as `job.PrintJob` units to the active target.
 
-The tray settings window persists the selected target mode, transform, and listener ports between launches. Output mode changes apply immediately. HTTP/TCP listener changes are saved but require an app restart to take effect.
+The tray settings window persists the selected target mode, printer, transform, and listener ports between launches. Output mode and printer changes apply immediately. HTTP/TCP listener changes are saved but require an app restart to take effect.
 
 ## Target modes
 
-- `system-print-queue`: submits raw label payloads to the host platform print queue and checks that a default printer is available
+- `system-print-queue`: submits raw label payloads to the host platform print queue and checks that the selected printer is available
 - `http-proxy`: forwards jobs to another HTTP endpoint, proxies HTTP traffic through to that upstream, and reports unhealthy if the upstream returns a non-2xx health response
 - `emulator`: renders label previews in a local window via Labelary
 
@@ -36,6 +36,7 @@ Environment variables:
 - `TCP_ENABLED` default `true`
 - `TCP_LISTEN_ADDR` default `:9100`
 - `TARGET_MODE` default `system-print-queue`
+- `PRINTER_NAME` default empty; when no printer is configured, the app resolves the system default printer at startup
 - `PROXY_HTTP_URL` default `http://localhost:9100`
 - `EMULATOR_DPMM` default `8`
 

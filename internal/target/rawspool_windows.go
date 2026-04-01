@@ -22,11 +22,14 @@ var (
 	startPagePrinterProc    = winspoolDLL.NewProc("StartPagePrinter")
 	endPagePrinterProc      = winspoolDLL.NewProc("EndPagePrinter")
 	writePrinterProc        = winspoolDLL.NewProc("WritePrinter")
+	enumPrintersProc        = winspoolDLL.NewProc("EnumPrintersW")
 	getDefaultPrinterProc   = winspoolDLL.NewProc("GetDefaultPrinterW")
 	errUnsupportedOperation = errors.New("operation not supported by system print queue")
 )
 
-type RawSpool struct{}
+type RawSpool struct {
+	printerName string
+}
 
 type docInfo1 struct {
 	docName    *uint16
@@ -34,8 +37,8 @@ type docInfo1 struct {
 	dataType   *uint16
 }
 
-func NewRawSpool() *RawSpool {
-	return &RawSpool{}
+func NewRawSpool(printerName string) *RawSpool {
+	return &RawSpool{printerName: printerName}
 }
 
 func (r *RawSpool) Name() string {
@@ -47,7 +50,7 @@ func (r *RawSpool) Send(_ context.Context, printJob job.PrintJob) error {
 		return errors.New("print job payload is empty")
 	}
 
-	printerName, err := defaultPrinterName()
+	printerName, err := r.resolvePrinterName()
 	if err != nil {
 		return fmt.Errorf("resolve default printer: %w", err)
 	}
@@ -97,7 +100,7 @@ func (r *RawSpool) Send(_ context.Context, printJob job.PrintJob) error {
 }
 
 func (r *RawSpool) Health(context.Context) error {
-	printerName, err := defaultPrinterName()
+	printerName, err := r.resolvePrinterName()
 	if err != nil {
 		return fmt.Errorf("resolve default printer: %w", err)
 	}
@@ -110,11 +113,15 @@ func (r *RawSpool) Health(context.Context) error {
 }
 
 func (r *RawSpool) Description(context.Context) (string, error) {
-	printerName, err := defaultPrinterName()
+	printerName, err := r.resolvePrinterName()
 	if err != nil {
 		return "", fmt.Errorf("resolve default printer: %w", err)
 	}
 	return printerName, nil
+}
+
+func (r *RawSpool) AvailablePrinters(context.Context) ([]string, error) {
+	return enumPrinterNames()
 }
 
 func spoolTitle(printJob job.PrintJob) string {
@@ -125,6 +132,13 @@ func spoolTitle(printJob job.PrintJob) string {
 		return "bananas-pos-" + printJob.Source
 	}
 	return "bananas-pos"
+}
+
+func (r *RawSpool) resolvePrinterName() (string, error) {
+	if r.printerName != "" {
+		return r.printerName, nil
+	}
+	return defaultPrinterName()
 }
 
 func defaultPrinterName() (string, error) {
@@ -153,6 +167,72 @@ func defaultPrinterName() (string, error) {
 	}
 
 	return windows.UTF16ToString(buffer), nil
+}
+
+type printerInfo4 struct {
+	printerName *uint16
+	serverName  *uint16
+	attributes  uint32
+}
+
+func enumPrinterNames() ([]string, error) {
+	const (
+		printerEnumLocal       = 0x2
+		printerEnumConnections = 0x4
+		level                  = 4
+	)
+
+	var needed uint32
+	var returned uint32
+	r1, _, err := enumPrintersProc.Call(
+		uintptr(printerEnumLocal|printerEnumConnections),
+		0,
+		uintptr(level),
+		0,
+		0,
+		uintptr(unsafe.Pointer(&needed)),
+		uintptr(unsafe.Pointer(&returned)),
+	)
+	if r1 == 0 && err != windows.ERROR_INSUFFICIENT_BUFFER {
+		if err != nil && err != windows.ERROR_SUCCESS {
+			return nil, err
+		}
+		return nil, errUnsupportedOperation
+	}
+	if needed == 0 {
+		return nil, nil
+	}
+
+	buffer := make([]byte, needed)
+	r1, _, err = enumPrintersProc.Call(
+		uintptr(printerEnumLocal|printerEnumConnections),
+		0,
+		uintptr(level),
+		uintptr(unsafe.Pointer(&buffer[0])),
+		uintptr(needed),
+		uintptr(unsafe.Pointer(&needed)),
+		uintptr(unsafe.Pointer(&returned)),
+	)
+	if r1 == 0 {
+		if err != nil && err != windows.ERROR_SUCCESS {
+			return nil, err
+		}
+		return nil, errUnsupportedOperation
+	}
+
+	infos := unsafe.Slice((*printerInfo4)(unsafe.Pointer(&buffer[0])), returned)
+	printers := make([]string, 0, len(infos))
+	for _, info := range infos {
+		if info.printerName == nil {
+			continue
+		}
+		name := windows.UTF16PtrToString(info.printerName)
+		if name == "" {
+			continue
+		}
+		printers = append(printers, name)
+	}
+	return printers, nil
 }
 
 func openPrinter(name string) (windows.Handle, error) {

@@ -20,6 +20,10 @@ type Descriptor interface {
 	Description(ctx context.Context) (string, error)
 }
 
+type PrinterLister interface {
+	AvailablePrinters(ctx context.Context) ([]string, error)
+}
+
 type HTTPPassthrough interface {
 	ServeHTTPProxy(rw http.ResponseWriter, req *http.Request) bool
 }

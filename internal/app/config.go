@@ -17,6 +17,7 @@ type Config struct {
 	TCPEnabled   bool
 	TCPAddr      string
 	TargetMode   string
+	PrinterName  string
 	Transform    string
 	ProxyHTTPURL string
 	EmulatorDPMM int
@@ -28,6 +29,7 @@ type runtimeState struct {
 	TCPEnabled  bool
 	TCPAddr     string
 	TargetMode  string
+	PrinterName string
 	Transform   string
 }
 
@@ -37,11 +39,13 @@ type settingsState struct {
 	TCPEnabled  bool
 	TCPPort     string
 	TargetMode  string
+	PrinterName string
 	Transform   string
 }
 
 const (
 	prefTargetMode  = "settings.target_mode"
+	prefPrinterName = "settings.printer_name"
 	prefTransform   = "settings.transform"
 	prefHTTPEnabled = "settings.http_enabled"
 	prefHTTPPort    = "settings.http_port"
@@ -73,6 +77,7 @@ func newRuntimeState(config Config) runtimeState {
 		TCPEnabled:  config.TCPEnabled,
 		TCPAddr:     config.TCPAddr,
 		TargetMode:  defaultTargetMode(config.TargetMode),
+		PrinterName: defaultPrinterName(config.TargetMode, config.PrinterName),
 		Transform:   activeTransform(config.TargetMode, config.Transform),
 	}
 }
@@ -84,6 +89,7 @@ func loadSettings(prefs fyne.Preferences, config Config) settingsState {
 		TCPEnabled:  config.TCPEnabled,
 		TCPPort:     portFromAddr(config.TCPAddr),
 		TargetMode:  defaultTargetMode(config.TargetMode),
+		PrinterName: defaultPrinterName(config.TargetMode, config.PrinterName),
 		Transform:   defaultTransform(config.Transform),
 	}
 
@@ -101,7 +107,10 @@ func loadSettings(prefs fyne.Preferences, config Config) settingsState {
 			prefs.RemoveValue(prefTransform)
 		}
 	}
+	settings.PrinterName = strings.TrimSpace(prefs.String(prefPrinterName))
 	if settings.TargetMode != "system-print-queue" {
+		settings.PrinterName = ""
+		prefs.RemoveValue(prefPrinterName)
 		settings.Transform = ""
 		prefs.RemoveValue(prefTransform)
 	}
@@ -121,6 +130,7 @@ func loadSettings(prefs fyne.Preferences, config Config) settingsState {
 
 func (s settingsState) apply(config Config) Config {
 	config.TargetMode = defaultTargetMode(s.TargetMode)
+	config.PrinterName = defaultPrinterName(config.TargetMode, s.PrinterName)
 	config.Transform = activeTransform(config.TargetMode, s.Transform)
 	config.HTTPEnabled = s.HTTPEnabled
 	config.TCPEnabled = s.TCPEnabled
@@ -135,6 +145,11 @@ func (s settingsState) apply(config Config) Config {
 
 func (s settingsState) persist(prefs fyne.Preferences) {
 	prefs.SetString(prefTargetMode, s.TargetMode)
+	if s.PrinterName == "" {
+		prefs.RemoveValue(prefPrinterName)
+	} else {
+		prefs.SetString(prefPrinterName, s.PrinterName)
+	}
 	if s.Transform == "" {
 		prefs.RemoveValue(prefTransform)
 	} else {
@@ -192,6 +207,13 @@ func activeTransform(mode, transform string) string {
 		return ""
 	}
 	return defaultTransform(transform)
+}
+
+func defaultPrinterName(mode, printerName string) string {
+	if mode != "system-print-queue" {
+		return ""
+	}
+	return strings.TrimSpace(printerName)
 }
 
 func portFromAddr(addr string) string {

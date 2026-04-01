@@ -26,11 +26,12 @@ func (execRunner) Run(ctx context.Context, name string, args []string, stdin []b
 }
 
 type RawSpool struct {
-	runner commandRunner
+	runner      commandRunner
+	printerName string
 }
 
-func NewRawSpool() *RawSpool {
-	return &RawSpool{runner: execRunner{}}
+func NewRawSpool(printerName string) *RawSpool {
+	return &RawSpool{runner: execRunner{}, printerName: strings.TrimSpace(printerName)}
 }
 
 func (r *RawSpool) Name() string {
@@ -43,6 +44,9 @@ func (r *RawSpool) Send(ctx context.Context, printJob job.PrintJob) error {
 	}
 
 	args := []string{"-o", "raw"}
+	if r.printerName != "" {
+		args = append(args, "-d", r.printerName)
+	}
 	if title := spoolTitle(printJob); title != "" {
 		args = append(args, "-t", title)
 	}
@@ -60,6 +64,14 @@ func (r *RawSpool) Health(ctx context.Context) error {
 		return fmt.Errorf("check print scheduler: %w", err)
 	}
 
+	if r.printerName != "" {
+		output, err := r.runner.Run(ctx, "lpstat", []string{"-p", r.printerName}, nil)
+		if err != nil {
+			return fmt.Errorf("check configured printer: %w", commandError(err, output))
+		}
+		return nil
+	}
+
 	output, err := r.runner.Run(ctx, "lpstat", []string{"-d"}, nil)
 	if err != nil {
 		return fmt.Errorf("check default printer: %w", commandError(err, output))
@@ -72,6 +84,10 @@ func (r *RawSpool) Health(ctx context.Context) error {
 }
 
 func (r *RawSpool) Description(ctx context.Context) (string, error) {
+	if r.printerName != "" {
+		return r.printerName, nil
+	}
+
 	output, err := r.runner.Run(ctx, "lpstat", []string{"-d"}, nil)
 	if err != nil {
 		return "", fmt.Errorf("resolve default printer: %w", commandError(err, output))
@@ -83,6 +99,14 @@ func (r *RawSpool) Description(ctx context.Context) (string, error) {
 	}
 
 	return name, nil
+}
+
+func (r *RawSpool) AvailablePrinters(ctx context.Context) ([]string, error) {
+	output, err := r.runner.Run(ctx, "lpstat", []string{"-e"}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("list printers: %w", commandError(err, output))
+	}
+	return parsePrinterList(output), nil
 }
 
 func parseDefaultDestination(output []byte) (string, error) {
@@ -101,6 +125,24 @@ func parseDefaultDestination(output []byte) (string, error) {
 	}
 
 	return "", fmt.Errorf("unexpected default printer output: %s", message)
+}
+
+func parsePrinterList(output []byte) []string {
+	lines := strings.Split(string(output), "\n")
+	printers := make([]string, 0, len(lines))
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		name := strings.TrimSpace(line)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		printers = append(printers, name)
+	}
+	return printers
 }
 
 func spoolTitle(printJob job.PrintJob) string {

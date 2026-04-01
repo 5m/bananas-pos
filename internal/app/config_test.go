@@ -9,6 +9,7 @@ func TestSettingsApplySeparatesPersistedPortsFromBaseConfig(t *testing.T) {
 		TCPEnabled:   true,
 		TCPAddr:      ":9100",
 		TargetMode:   "system-print-queue",
+		PrinterName:  "",
 		Transform:    "",
 		ProxyHTTPURL: "http://localhost:9100",
 		EmulatorDPMM: 8,
@@ -20,6 +21,7 @@ func TestSettingsApplySeparatesPersistedPortsFromBaseConfig(t *testing.T) {
 		TCPEnabled:  true,
 		TCPPort:     "9200",
 		TargetMode:  "http-proxy",
+		PrinterName: "Kitchen",
 		Transform:   "ignored",
 	}
 
@@ -36,6 +38,9 @@ func TestSettingsApplySeparatesPersistedPortsFromBaseConfig(t *testing.T) {
 	if got.TargetMode != "http-proxy" {
 		t.Fatalf("expected target mode http-proxy, got %q", got.TargetMode)
 	}
+	if got.PrinterName != "" {
+		t.Fatalf("expected printer name to be cleared outside system-print-queue, got %q", got.PrinterName)
+	}
 	if got.Transform != "" {
 		t.Fatalf("expected transform to be cleared outside system-print-queue, got %q", got.Transform)
 	}
@@ -48,6 +53,7 @@ func TestNewRuntimeStateTracksActiveRuntimeConfig(t *testing.T) {
 		TCPEnabled:  false,
 		TCPAddr:     ":9100",
 		TargetMode:  "system-print-queue",
+		PrinterName: "Kitchen",
 		Transform:   "epson-escpos",
 	}
 
@@ -58,7 +64,30 @@ func TestNewRuntimeStateTracksActiveRuntimeConfig(t *testing.T) {
 	if got.Transform != "epson-escpos" {
 		t.Fatalf("unexpected transform %q", got.Transform)
 	}
+	if got.PrinterName != "Kitchen" {
+		t.Fatalf("unexpected printer name %q", got.PrinterName)
+	}
 	if !got.HTTPEnabled || got.TCPEnabled {
 		t.Fatalf("unexpected listener state: %+v", got)
+	}
+}
+
+func TestSettingsFromFormClearsPrinterOutsideSystemQueue(t *testing.T) {
+	got, err := settingsFromForm("HTTP Proxy", "Kitchen", "None", true, "9180", true, "9100")
+	if err != nil {
+		t.Fatalf("settingsFromForm() error = %v", err)
+	}
+	if got.PrinterName != "" {
+		t.Fatalf("expected printer name to be cleared, got %q", got.PrinterName)
+	}
+}
+
+func TestSettingsFromFormRequiresPrinterForSystemQueue(t *testing.T) {
+	_, err := settingsFromForm("System Print Queue", "", "None", true, "9180", true, "9100")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if err.Error() != "select a printer" {
+		t.Fatalf("unexpected error %q", err)
 	}
 }

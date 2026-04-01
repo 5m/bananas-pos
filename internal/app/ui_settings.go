@@ -144,6 +144,9 @@ func (a *App) showSettings() {
 	updatePortVisibility(httpEnabledCheck, httpPortRow)
 	updatePortVisibility(tcpEnabledCheck, tcpPortRow)
 
+	autoStartCheck := widget.NewCheck("Start automatically when you log in", nil)
+	autoStartCheck.SetChecked(settings.AutoStart)
+
 	sectionTitle := func(text string) fyne.CanvasObject {
 		return widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	}
@@ -204,7 +207,19 @@ func (a *App) showSettings() {
 		apiRow,
 		tcpRow,
 	))
-	settingsContent := container.NewVBox(targetCard, transformCard, inputsCard)
+	startupObjects := []fyne.CanvasObject{}
+	if autoStartSupported() {
+		startupObjects = append(startupObjects,
+			sectionTitle("Startup"),
+			autoStartCheck,
+		)
+	}
+	startupCard := widget.NewCard("", "", container.NewVBox(startupObjects...))
+	settingsObjects := []fyne.CanvasObject{targetCard, transformCard, inputsCard}
+	if autoStartSupported() {
+		settingsObjects = append(settingsObjects, startupCard)
+	}
+	settingsContent := container.NewVBox(settingsObjects...)
 
 	saveButton := widget.NewButton("Save", func() {
 		next, err := settingsFromForm(
@@ -215,8 +230,14 @@ func (a *App) showSettings() {
 			httpPortEntry.Text,
 			tcpEnabledCheck.Checked,
 			tcpPortEntry.Text,
+			autoStartCheck.Checked,
 		)
 		if err != nil {
+			dialog.ShowError(err, a.settingsWin)
+			return
+		}
+
+		if err := setAutoStart(next.AutoStart); err != nil {
 			dialog.ShowError(err, a.settingsWin)
 			return
 		}
@@ -249,7 +270,7 @@ func (a *App) showSettings() {
 	a.settingsWin.RequestFocus()
 }
 
-func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string) (settingsState, error) {
+func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string, autoStart bool) (settingsState, error) {
 	mode := modeKeyFromLabel(modeLabelValue)
 	if mode == "" {
 		return settingsState{}, fmt.Errorf("select a mode")
@@ -283,6 +304,7 @@ func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, h
 		HTTPPort:    httpPort,
 		TCPEnabled:  tcpEnabled,
 		TCPPort:     tcpPort,
+		AutoStart:   autoStart,
 		TargetMode:  mode,
 		PrinterName: printerName,
 		Transform:   transform,

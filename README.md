@@ -16,6 +16,8 @@ Incoming payloads are split into labels and forwarded as `job.PrintJob` units to
 
 The tray settings window persists the selected target mode, printer, transform, and listener ports between launches. Output mode and printer changes apply immediately. HTTP/TCP listener changes are saved but require an app restart to take effect.
 
+On macOS and Windows, the settings window can also register the app to start automatically at user login. macOS uses a LaunchAgent in `~/Library/LaunchAgents`, while Windows writes a current-user startup entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+
 ## Target modes
 
 - `system-print-queue`: submits raw label payloads to the host platform print queue and checks that the selected printer is available

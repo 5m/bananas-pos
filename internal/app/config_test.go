@@ -73,7 +73,7 @@ func TestNewRuntimeStateTracksActiveRuntimeConfig(t *testing.T) {
 }
 
 func TestSettingsFromFormClearsPrinterOutsideSystemQueue(t *testing.T) {
-	got, err := settingsFromForm("HTTP Proxy", "Kitchen", "None", true, "9180", true, "9100")
+	got, err := settingsFromForm("HTTP Proxy", "Kitchen", "None", true, "9180", true, "9100", false)
 	if err != nil {
 		t.Fatalf("settingsFromForm() error = %v", err)
 	}
@@ -83,11 +83,37 @@ func TestSettingsFromFormClearsPrinterOutsideSystemQueue(t *testing.T) {
 }
 
 func TestSettingsFromFormRequiresPrinterForSystemQueue(t *testing.T) {
-	_, err := settingsFromForm("System Print Queue", "", "None", true, "9180", true, "9100")
+	_, err := settingsFromForm("System Print Queue", "", "None", true, "9180", true, "9100", false)
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if err.Error() != "select a printer" {
 		t.Fatalf("unexpected error %q", err)
+	}
+}
+
+func TestSettingsFromFormKeepsAutoStartValue(t *testing.T) {
+	got, err := settingsFromForm("HTTP Proxy", "", "None", true, "9180", true, "9100", true)
+	if err != nil {
+		t.Fatalf("settingsFromForm() error = %v", err)
+	}
+	if !got.AutoStart {
+		t.Fatal("expected auto-start to be enabled")
+	}
+}
+
+func TestWindowsAutoStartCommandQuotesExecutablePath(t *testing.T) {
+	got := windowsAutoStartCommand(`C:\Program Files\Bananas POS\bananas-pos.exe`)
+	want := `"C:\Program Files\Bananas POS\bananas-pos.exe"`
+	if got != want {
+		t.Fatalf("unexpected command: got %q want %q", got, want)
+	}
+}
+
+func TestWindowsAutoStartCommandEscapesEmbeddedQuotes(t *testing.T) {
+	got := windowsAutoStartCommand(`C:\Apps\Bananas "Beta"\bananas-pos.exe`)
+	want := `"C:\Apps\Bananas \"Beta\"\bananas-pos.exe"`
+	if got != want {
+		t.Fatalf("unexpected command: got %q want %q", got, want)
 	}
 }

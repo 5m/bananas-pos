@@ -38,6 +38,7 @@ type settingsState struct {
 	HTTPPort    string
 	TCPEnabled  bool
 	TCPPort     string
+	AutoStart   bool
 	TargetMode  string
 	PrinterName string
 	Transform   string
@@ -51,6 +52,7 @@ const (
 	prefHTTPPort    = "settings.http_port"
 	prefTCPEnabled  = "settings.tcp_enabled"
 	prefTCPPort     = "settings.tcp_port"
+	prefAutoStart   = "settings.auto_start"
 )
 
 var modeOptions = []struct {
@@ -124,6 +126,7 @@ func loadSettings(prefs fyne.Preferences, config Config) settingsState {
 	if port := strings.TrimSpace(prefs.String(prefTCPPort)); port != "" {
 		settings.TCPPort = port
 	}
+	settings.AutoStart = prefs.BoolWithFallback(prefAutoStart, autoStartDefault())
 
 	return settings
 }
@@ -159,6 +162,7 @@ func (s settingsState) persist(prefs fyne.Preferences) {
 	prefs.SetString(prefHTTPPort, s.HTTPPort)
 	prefs.SetBool(prefTCPEnabled, s.TCPEnabled)
 	prefs.SetString(prefTCPPort, s.TCPPort)
+	prefs.SetBool(prefAutoStart, s.AutoStart)
 }
 
 func modeLabel(mode string) string {

@@ -76,8 +76,9 @@ func encodeESCPOSRaster(img image.Image) []byte {
 	output = append(output, byte(widthBytes), byte(widthBytes>>8))
 	output = append(output, byte(height), byte(height>>8))
 	output = append(output, data...)
-	output = append(output, escposFeedBeforeCut...)
-	output = append(output, escposFullCut...)
+	// NOTE: This auto feed and cut is normally handled by the printer driver
+	// output = append(output, escposFeedBeforeCut...)
+	// output = append(output, escposFullCut...)
 	return output
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,8 +33,10 @@ type App struct {
 	tcpSrv      *tcpinput.Server
 	trayMenu    *fyne.Menu
 
-	mu      sync.Mutex
-	exitErr error
+	mu                         sync.Mutex
+	exitErr                    error
+	listenerErrors             map[string]string
+	settingsShownForListenErrs bool
 }
 
 func New(config Config) (*App, error) {
@@ -56,11 +59,12 @@ func New(config Config) (*App, error) {
 	})
 
 	app := &App{
-		baseConfig: config,
-		active:     newRuntimeState(config),
-		fyneApp:    fyneApplication,
-		icon:       icon,
-		mainWindow: mainWindow,
+		baseConfig:     config,
+		active:         newRuntimeState(config),
+		fyneApp:        fyneApplication,
+		icon:           icon,
+		mainWindow:     mainWindow,
+		listenerErrors: map[string]string{},
 	}
 
 	var err error
@@ -143,8 +147,7 @@ func (a *App) shutdown() {
 func (a *App) runServer(name string, start func() error) {
 	log.Printf("starting %s with target %s", name, a.target.Name())
 	if err := start(); err != nil {
-		a.setExitErr(fmt.Errorf("%s failed: %w", name, err))
-		a.fyneApp.Quit()
+		a.handleListenerError(name, err)
 	}
 }
 
@@ -175,6 +178,48 @@ func (a *App) setExitErr(err error) {
 	if a.exitErr == nil {
 		a.exitErr = err
 	}
+}
+
+func (a *App) handleListenerError(name string, err error) {
+	if err == nil {
+		return
+	}
+
+	a.mu.Lock()
+	a.listenerErrors[name] = err.Error()
+	shouldShowSettings := !a.settingsShownForListenErrs
+	a.settingsShownForListenErrs = true
+	a.mu.Unlock()
+
+	log.Printf("%s failed: %v", name, err)
+	if !shouldShowSettings {
+		return
+	}
+
+	fyne.Do(func() {
+		a.showSettings()
+	})
+}
+
+func (a *App) listenerErrorDetails() (string, []string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if len(a.listenerErrors) == 0 {
+		return "", nil
+	}
+
+	names := make([]string, 0, len(a.listenerErrors))
+	for name := range a.listenerErrors {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	errors := make([]string, 0, len(names))
+	for _, name := range names {
+		errors = append(errors, fmt.Sprintf("%s: %s", name, a.listenerErrors[name]))
+	}
+	return "One or more listeners failed to start. Update the settings below, then restart the app.", errors
 }
 
 func (a *App) getExitErr() error {

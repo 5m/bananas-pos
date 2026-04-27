@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"bananas-pos/internal/meta"
@@ -229,6 +230,32 @@ func (a *App) showSettings() {
 	}
 	startupCard := widget.NewCard("", "", container.NewVBox(startupObjects...))
 	settingsObjects := []fyne.CanvasObject{targetCard, transformCard, inputsCard}
+	if info, errors := a.listenerErrorDetails(); strings.TrimSpace(info) != "" {
+		infoSegment := &widget.TextSegment{
+			Text: info,
+			Style: widget.RichTextStyle{
+				ColorName: theme.ColorNameForeground,
+			},
+		}
+		errorSegment := &widget.TextSegment{
+			Text: strings.Join(errors, "\n"),
+			Style: widget.RichTextStyle{
+				ColorName: theme.ColorNameError,
+			},
+		}
+		notice := widget.NewRichText(
+			infoSegment,
+			&widget.TextSegment{Text: "\n"},
+			errorSegment,
+		)
+		notice.Wrapping = fyne.TextWrapWord
+		settingsObjects = append([]fyne.CanvasObject{
+			widget.NewCard("", "", container.NewVBox(
+				sectionTitle("Startup Error"),
+				notice,
+			)),
+		}, settingsObjects...)
+	}
 	if autoStartSupported() {
 		settingsObjects = append(settingsObjects, startupCard)
 	}

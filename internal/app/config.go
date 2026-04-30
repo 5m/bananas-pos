@@ -28,6 +28,7 @@ type runtimeState struct {
 	HTTPAddr    string
 	TCPEnabled  bool
 	TCPAddr     string
+	Station     string
 	TargetMode  string
 	PrinterName string
 	Transform   string
@@ -38,6 +39,7 @@ type settingsState struct {
 	HTTPPort    string
 	TCPEnabled  bool
 	TCPPort     string
+	Station     string
 	AutoStart   bool
 	TargetMode  string
 	PrinterName string
@@ -48,6 +50,7 @@ const (
 	prefTargetMode  = "settings.target_mode"
 	prefPrinterName = "settings.printer_name"
 	prefTransform   = "settings.transform"
+	prefStation     = "settings.station"
 	prefHTTPEnabled = "settings.http_enabled"
 	prefHTTPPort    = "settings.http_port"
 	prefTCPEnabled  = "settings.tcp_enabled"
@@ -110,6 +113,7 @@ func loadSettings(prefs fyne.Preferences, config Config) settingsState {
 		}
 	}
 	settings.PrinterName = strings.TrimSpace(prefs.String(prefPrinterName))
+	settings.Station = strings.TrimSpace(prefs.String(prefStation))
 	if settings.TargetMode != "system-print-queue" {
 		settings.PrinterName = ""
 		prefs.RemoveValue(prefPrinterName)
@@ -157,6 +161,11 @@ func (s settingsState) persist(prefs fyne.Preferences) {
 		prefs.RemoveValue(prefTransform)
 	} else {
 		prefs.SetString(prefTransform, s.Transform)
+	}
+	if s.Station == "" {
+		prefs.RemoveValue(prefStation)
+	} else {
+		prefs.SetString(prefStation, s.Station)
 	}
 	prefs.SetBool(prefHTTPEnabled, s.HTTPEnabled)
 	prefs.SetString(prefHTTPPort, s.HTTPPort)

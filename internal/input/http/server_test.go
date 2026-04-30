@@ -2,6 +2,7 @@ package httpinput
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,8 +19,31 @@ func (stubTarget) Send(context.Context, job.PrintJob) error { return nil }
 
 func (stubTarget) Health(context.Context) error { return nil }
 
+func TestHealthIncludesStationAndTCPPort(t *testing.T) {
+	server := NewServer(":0", stubTarget{}, HealthInfo{Station: "Kitchen", TCPPort: "9100"})
+
+	req := httptest.NewRequest(http.MethodGet, "/_/health", nil)
+	rec := httptest.NewRecorder()
+	server.server.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if body["station"] != "Kitchen" {
+		t.Fatalf("expected station Kitchen, got %#v", body["station"])
+	}
+	if body["tcp_port"] != "9100" {
+		t.Fatalf("expected tcp_port 9100, got %#v", body["tcp_port"])
+	}
+}
+
 func TestCORSPreflight(t *testing.T) {
-	server := NewServer(":0", stubTarget{})
+	server := NewServer(":0", stubTarget{}, HealthInfo{})
 
 	req := httptest.NewRequest(http.MethodOptions, "/zpl", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -44,7 +68,7 @@ func TestCORSPreflight(t *testing.T) {
 }
 
 func TestCORSHeadersOnPrintResponse(t *testing.T) {
-	server := NewServer(":0", stubTarget{})
+	server := NewServer(":0", stubTarget{}, HealthInfo{})
 
 	req := httptest.NewRequest(http.MethodPost, "/zpl", strings.NewReader("^XA^XZ"))
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -61,7 +85,7 @@ func TestCORSHeadersOnPrintResponse(t *testing.T) {
 }
 
 func TestRejectsEmptyPrintPayload(t *testing.T) {
-	server := NewServer(":0", stubTarget{})
+	server := NewServer(":0", stubTarget{}, HealthInfo{})
 
 	req := httptest.NewRequest(http.MethodPost, "/zpl", http.NoBody)
 	rec := httptest.NewRecorder()
@@ -77,7 +101,7 @@ func TestRejectsEmptyPrintPayload(t *testing.T) {
 
 func TestPrintSplitsMultipleLabels(t *testing.T) {
 	target := &captureTarget{}
-	server := NewServer(":0", target)
+	server := NewServer(":0", target, HealthInfo{})
 
 	req := httptest.NewRequest(
 		http.MethodPost,

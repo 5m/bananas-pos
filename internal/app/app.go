@@ -58,9 +58,12 @@ func New(config Config) (*App, error) {
 		mainWindow.Hide()
 	})
 
+	active := newRuntimeState(config)
+	active.Station = settings.Station
+
 	app := &App{
 		baseConfig:     config,
-		active:         newRuntimeState(config),
+		active:         active,
 		fyneApp:        fyneApplication,
 		icon:           icon,
 		mainWindow:     mainWindow,
@@ -75,7 +78,7 @@ func New(config Config) (*App, error) {
 	app.target = target.NewSwitcher(initialTarget, activeTransform(app.active.TargetMode, app.active.Transform))
 
 	if app.active.HTTPEnabled {
-		app.httpSrv = httpinput.NewServer(app.active.HTTPAddr, app.target)
+		app.httpSrv = httpinput.NewServer(app.active.HTTPAddr, app.target, app.healthInfo())
 	}
 	if app.active.TCPEnabled {
 		app.tcpSrv = tcpinput.NewServer(app.active.TCPAddr, app.target)
@@ -280,6 +283,13 @@ func (a *App) tcpAddr() string {
 		return a.tcpSrv.Addr()
 	}
 	return a.active.TCPAddr
+}
+
+func (a *App) healthInfo() httpinput.HealthInfo {
+	return httpinput.HealthInfo{
+		Station: a.active.Station,
+		TCPPort: portFromAddr(a.active.TCPAddr),
+	}
 }
 
 func resolveConfiguredPrinterName(printerName string) (string, error) {

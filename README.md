@@ -9,12 +9,12 @@ The app is built with Go and Fyne. At runtime it starts one process, enforces si
 - HTTP input defaults to `:9180`
 - TCP input defaults to `:9100`
 - `POST /zpl` submits print payloads over HTTP and rejects empty payloads
-- `GET /_/health` reports target health and returns a non-200 response when the active target is unhealthy
+- `GET /_/health` reports target health, configured station and TCP port, and returns a non-200 response when the active target is unhealthy
 - Browser access to the HTTP server is CORS-enabled
 
 Incoming payloads are split into labels and forwarded as `job.PrintJob` units to the active target.
 
-The tray settings window persists the selected target mode, printer, transform, and listener ports between launches. Output mode and printer changes apply immediately. HTTP/TCP listener changes are saved but require an app restart to take effect.
+The tray settings window persists the selected station, target mode, printer, transform, and listener ports between launches. Output mode, printer, transform, and station changes apply immediately. HTTP/TCP listener changes are saved but require an app restart to take effect.
 
 On macOS and Windows, the settings window can also register the app to start automatically at user login. macOS uses a LaunchAgent in `~/Library/LaunchAgents`, while Windows writes a current-user startup entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 

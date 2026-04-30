@@ -13,6 +13,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	httpinput "bananas-pos/internal/input/http"
 	"bananas-pos/internal/meta"
 	"bananas-pos/internal/target"
 )
@@ -21,7 +22,7 @@ func (a *App) showSettings() {
 	if a.settingsWin == nil {
 		window := a.fyneApp.NewWindow(meta.AppName)
 		window.SetIcon(a.icon)
-		window.Resize(fyne.NewSize(420, 280))
+		window.Resize(fyne.NewSize(420, 320))
 		window.SetFixedSize(true)
 		window.SetCloseIntercept(func() {
 			window.Hide()
@@ -129,6 +130,11 @@ func (a *App) showSettings() {
 	tcpPortLabel := widget.NewLabel("Port")
 	tcpPortRow := container.NewHBox(tcpPortLabel, tcpPortField)
 
+	stationEntry := widget.NewEntry()
+	stationEntry.SetPlaceHolder("Optional station name")
+	stationEntry.SetText(settings.Station)
+	stationRow := container.NewBorder(nil, nil, widget.NewLabel("Station"), nil, stationEntry)
+
 	updatePortVisibility := func(check *widget.Check, row *fyne.Container) {
 		if check.Checked {
 			row.Show()
@@ -218,6 +224,7 @@ func (a *App) showSettings() {
 	))
 	inputsCard := widget.NewCard("", "", container.NewVBox(
 		sectionHeader("Server Routes", hostIPLabel),
+		stationRow,
 		apiRow,
 		tcpRow,
 	))
@@ -270,6 +277,7 @@ func (a *App) showSettings() {
 			httpPortEntry.Text,
 			tcpEnabledCheck.Checked,
 			tcpPortEntry.Text,
+			stationEntry.Text,
 			autoStartCheck.Checked,
 		)
 		if err != nil {
@@ -283,6 +291,7 @@ func (a *App) showSettings() {
 		}
 
 		next.persist(a.fyneApp.Preferences())
+		a.applySettingsMetadata(next)
 		if next.TargetMode != a.active.TargetMode || next.PrinterName != a.active.PrinterName || next.Transform != a.active.Transform {
 			a.switchOutput(next.TargetMode, next.PrinterName, next.Transform)
 		}
@@ -310,7 +319,7 @@ func (a *App) showSettings() {
 	a.settingsWin.RequestFocus()
 }
 
-func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string, autoStart bool) (settingsState, error) {
+func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, httpEnabled bool, httpPort string, tcpEnabled bool, tcpPort string, station string, autoStart bool) (settingsState, error) {
 	mode := modeKeyFromLabel(modeLabelValue)
 	if mode == "" {
 		return settingsState{}, fmt.Errorf("select a mode")
@@ -344,11 +353,22 @@ func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, h
 		HTTPPort:    httpPort,
 		TCPEnabled:  tcpEnabled,
 		TCPPort:     tcpPort,
+		Station:     strings.TrimSpace(station),
 		AutoStart:   autoStart,
 		TargetMode:  mode,
 		PrinterName: printerName,
 		Transform:   transform,
 	}, nil
+}
+
+func (a *App) applySettingsMetadata(next settingsState) {
+	a.active.Station = next.Station
+	if a.httpSrv != nil {
+		a.httpSrv.SetHealthInfo(httpinput.HealthInfo{
+			Station: next.Station,
+			TCPPort: next.TCPPort,
+		})
+	}
 }
 
 func modeKeyFromLabel(label string) string {

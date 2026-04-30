@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,14 +25,22 @@ type Server struct {
 	server    *http.Server
 	jobSeq    atomic.Uint64
 	startedAt time.Time
+	healthMu  sync.RWMutex
+	health    HealthInfo
 }
 
-func NewServer(addr string, outputTarget target.Target) *Server {
+type HealthInfo struct {
+	Station string
+	TCPPort string
+}
+
+func NewServer(addr string, outputTarget target.Target, healthInfo HealthInfo) *Server {
 	s := &Server{
 		addr:      addr,
 		target:    outputTarget,
 		startedAt: time.Now(),
 	}
+	s.SetHealthInfo(healthInfo)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_/health", s.handleHealth)
@@ -51,6 +60,16 @@ func NewServer(addr string, outputTarget target.Target) *Server {
 
 func (s *Server) Addr() string {
 	return s.addr
+}
+
+func (s *Server) SetHealthInfo(healthInfo HealthInfo) {
+	healthInfo.Station = strings.TrimSpace(healthInfo.Station)
+	healthInfo.TCPPort = strings.TrimSpace(healthInfo.TCPPort)
+
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+
+	s.health = healthInfo
 }
 
 func (s *Server) Start() error {
@@ -80,6 +99,9 @@ func (s *Server) handleHealth(rw http.ResponseWriter, req *http.Request) {
 		"status":  "ok",
 		"target":  s.target.Name(),
 	}
+	healthInfo := s.healthInfo()
+	response["station"] = healthInfo.Station
+	response["tcp_port"] = healthInfo.TCPPort
 	if err != nil {
 		status = http.StatusServiceUnavailable
 		response["status"] = "error"
@@ -89,6 +111,13 @@ func (s *Server) handleHealth(rw http.ResponseWriter, req *http.Request) {
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(status)
 	_ = json.NewEncoder(rw).Encode(response)
+}
+
+func (s *Server) healthInfo() HealthInfo {
+	s.healthMu.RLock()
+	defer s.healthMu.RUnlock()
+
+	return s.health
 }
 
 func (s *Server) handlePrint(rw http.ResponseWriter, req *http.Request) {

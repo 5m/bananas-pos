@@ -73,7 +73,7 @@ func TestNewRuntimeStateTracksActiveRuntimeConfig(t *testing.T) {
 }
 
 func TestSettingsFromFormClearsPrinterOutsideSystemQueue(t *testing.T) {
-	got, err := settingsFromForm("HTTP Proxy", "Kitchen", "None", true, "9180", true, "9100", false)
+	got, err := settingsFromForm("HTTP Proxy", "Kitchen", "None", true, "9180", true, "9100", "", false)
 	if err != nil {
 		t.Fatalf("settingsFromForm() error = %v", err)
 	}
@@ -83,7 +83,7 @@ func TestSettingsFromFormClearsPrinterOutsideSystemQueue(t *testing.T) {
 }
 
 func TestSettingsFromFormRequiresPrinterForSystemQueue(t *testing.T) {
-	_, err := settingsFromForm("System Print Queue", "", "None", true, "9180", true, "9100", false)
+	_, err := settingsFromForm("System Print Queue", "", "None", true, "9180", true, "9100", "", false)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -93,12 +93,22 @@ func TestSettingsFromFormRequiresPrinterForSystemQueue(t *testing.T) {
 }
 
 func TestSettingsFromFormKeepsAutoStartValue(t *testing.T) {
-	got, err := settingsFromForm("HTTP Proxy", "", "None", true, "9180", true, "9100", true)
+	got, err := settingsFromForm("HTTP Proxy", "", "None", true, "9180", true, "9100", "", true)
 	if err != nil {
 		t.Fatalf("settingsFromForm() error = %v", err)
 	}
 	if !got.AutoStart {
 		t.Fatal("expected auto-start to be enabled")
+	}
+}
+
+func TestSettingsFromFormKeepsStationOptional(t *testing.T) {
+	got, err := settingsFromForm("HTTP Proxy", "", "None", true, "9180", true, "9100", " Kitchen ", false)
+	if err != nil {
+		t.Fatalf("settingsFromForm() error = %v", err)
+	}
+	if got.Station != "Kitchen" {
+		t.Fatalf("expected station to be trimmed, got %q", got.Station)
 	}
 }
 

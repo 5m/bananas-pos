@@ -2,4 +2,4 @@ package meta
 
 const AppName = "Bananas POS"
 
-var Version = "0.5"
+var Version = "0.6"

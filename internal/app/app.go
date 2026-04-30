@@ -286,10 +286,14 @@ func (a *App) tcpAddr() string {
 }
 
 func (a *App) healthInfo() httpinput.HealthInfo {
-	return httpinput.HealthInfo{
+	info := httpinput.HealthInfo{
 		Station: a.active.Station,
 		TCPPort: portFromAddr(a.active.TCPAddr),
 	}
+	if a.active.TargetMode == "system-print-queue" {
+		info.Queue = a.active.PrinterName
+	}
+	return info
 }
 
 func resolveConfiguredPrinterName(printerName string) (string, error) {

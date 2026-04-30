@@ -72,6 +72,38 @@ func TestNewRuntimeStateTracksActiveRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestHealthInfoIncludesQueueForSystemPrintQueue(t *testing.T) {
+	application := &App{active: runtimeState{
+		TCPAddr:     ":9100",
+		Station:     "Kitchen",
+		TargetMode:  "system-print-queue",
+		PrinterName: "Zebra",
+	}}
+
+	got := application.healthInfo()
+	if got.Station != "Kitchen" {
+		t.Fatalf("expected station Kitchen, got %q", got.Station)
+	}
+	if got.TCPPort != "9100" {
+		t.Fatalf("expected TCP port 9100, got %q", got.TCPPort)
+	}
+	if got.Queue != "Zebra" {
+		t.Fatalf("expected queue Zebra, got %q", got.Queue)
+	}
+}
+
+func TestHealthInfoOmitsQueueOutsideSystemPrintQueue(t *testing.T) {
+	application := &App{active: runtimeState{
+		TCPAddr:     ":9100",
+		TargetMode:  "http-proxy",
+		PrinterName: "Zebra",
+	}}
+
+	if got := application.healthInfo(); got.Queue != "" {
+		t.Fatalf("expected queue to be empty, got %q", got.Queue)
+	}
+}
+
 func TestSettingsFromFormClearsPrinterOutsideSystemQueue(t *testing.T) {
 	got, err := settingsFromForm("HTTP Proxy", "Kitchen", "None", true, "9180", true, "9100", "", false)
 	if err != nil {

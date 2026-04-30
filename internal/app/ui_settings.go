@@ -13,7 +13,6 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	httpinput "bananas-pos/internal/input/http"
 	"bananas-pos/internal/meta"
 	"bananas-pos/internal/target"
 )
@@ -133,7 +132,6 @@ func (a *App) showSettings() {
 	stationEntry := widget.NewEntry()
 	stationEntry.SetPlaceHolder("Optional station name")
 	stationEntry.SetText(settings.Station)
-	stationRow := container.NewBorder(nil, nil, widget.NewLabel("Station"), nil, stationEntry)
 
 	updatePortVisibility := func(check *widget.Check, row *fyne.Container) {
 		if check.Checked {
@@ -224,14 +222,15 @@ func (a *App) showSettings() {
 	))
 	inputsCard := widget.NewCard("", "", container.NewVBox(
 		sectionHeader("Server Routes", hostIPLabel),
-		stationRow,
 		apiRow,
 		tcpRow,
 	))
-	startupObjects := []fyne.CanvasObject{}
+	startupObjects := []fyne.CanvasObject{
+		sectionTitle("Station"),
+		stationEntry,
+	}
 	if autoStartSupported() {
 		startupObjects = append(startupObjects,
-			sectionTitle("Startup"),
 			autoStartCheck,
 		)
 	}
@@ -263,9 +262,7 @@ func (a *App) showSettings() {
 			)),
 		}, settingsObjects...)
 	}
-	if autoStartSupported() {
-		settingsObjects = append(settingsObjects, startupCard)
-	}
+	settingsObjects = append(settingsObjects, startupCard)
 	settingsContent := container.NewVBox(settingsObjects...)
 
 	saveButton := widget.NewButton("Save", func() {
@@ -291,10 +288,10 @@ func (a *App) showSettings() {
 		}
 
 		next.persist(a.fyneApp.Preferences())
-		a.applySettingsMetadata(next)
 		if next.TargetMode != a.active.TargetMode || next.PrinterName != a.active.PrinterName || next.Transform != a.active.Transform {
 			a.switchOutput(next.TargetMode, next.PrinterName, next.Transform)
 		}
+		a.applySettingsMetadata(next)
 
 		a.settingsWin.Hide()
 		if a.listenerRestartRequired(next) {
@@ -364,10 +361,9 @@ func settingsFromForm(modeLabelValue, printerName, transformLabelValue string, h
 func (a *App) applySettingsMetadata(next settingsState) {
 	a.active.Station = next.Station
 	if a.httpSrv != nil {
-		a.httpSrv.SetHealthInfo(httpinput.HealthInfo{
-			Station: next.Station,
-			TCPPort: next.TCPPort,
-		})
+		info := a.healthInfo()
+		info.TCPPort = next.TCPPort
+		a.httpSrv.SetHealthInfo(info)
 	}
 }
 

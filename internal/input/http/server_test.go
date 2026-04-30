@@ -19,8 +19,8 @@ func (stubTarget) Send(context.Context, job.PrintJob) error { return nil }
 
 func (stubTarget) Health(context.Context) error { return nil }
 
-func TestHealthIncludesStationAndTCPPort(t *testing.T) {
-	server := NewServer(":0", stubTarget{}, HealthInfo{Station: "Kitchen", TCPPort: "9100"})
+func TestHealthIncludesConfiguredMetadata(t *testing.T) {
+	server := NewServer(":0", stubTarget{}, HealthInfo{Station: "Kitchen", TCPPort: "9100", Queue: "Zebra"})
 
 	req := httptest.NewRequest(http.MethodGet, "/_/health", nil)
 	rec := httptest.NewRecorder()
@@ -39,6 +39,15 @@ func TestHealthIncludesStationAndTCPPort(t *testing.T) {
 	}
 	if body["tcp_port"] != "9100" {
 		t.Fatalf("expected tcp_port 9100, got %#v", body["tcp_port"])
+	}
+	if body["target"] != "stub" {
+		t.Fatalf("expected target stub, got %#v", body["target"])
+	}
+	if body["queue"] != "Zebra" {
+		t.Fatalf("expected queue Zebra, got %#v", body["queue"])
+	}
+	if _, ok := body["printer"]; ok {
+		t.Fatalf("expected printer field to be absent, got %#v", body["printer"])
 	}
 }
 

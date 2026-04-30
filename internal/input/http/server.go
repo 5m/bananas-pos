@@ -32,6 +32,7 @@ type Server struct {
 type HealthInfo struct {
 	Station string
 	TCPPort string
+	Queue   string
 }
 
 func NewServer(addr string, outputTarget target.Target, healthInfo HealthInfo) *Server {
@@ -65,6 +66,7 @@ func (s *Server) Addr() string {
 func (s *Server) SetHealthInfo(healthInfo HealthInfo) {
 	healthInfo.Station = strings.TrimSpace(healthInfo.Station)
 	healthInfo.TCPPort = strings.TrimSpace(healthInfo.TCPPort)
+	healthInfo.Queue = strings.TrimSpace(healthInfo.Queue)
 
 	s.healthMu.Lock()
 	defer s.healthMu.Unlock()
@@ -102,6 +104,9 @@ func (s *Server) handleHealth(rw http.ResponseWriter, req *http.Request) {
 	healthInfo := s.healthInfo()
 	response["station"] = healthInfo.Station
 	response["tcp_port"] = healthInfo.TCPPort
+	if healthInfo.Queue != "" {
+		response["queue"] = healthInfo.Queue
+	}
 	if err != nil {
 		status = http.StatusServiceUnavailable
 		response["status"] = "error"

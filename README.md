@@ -9,7 +9,7 @@ The app is built with Go and Fyne. At runtime it starts one process, enforces si
 - HTTP input defaults to `:9180`
 - TCP input defaults to `:9100`
 - `POST /zpl` submits print payloads over HTTP and rejects empty payloads
-- `GET /_/health` reports target health, configured station and TCP port, and returns a non-200 response when the active target is unhealthy
+- `GET /_/health` reports target health, configured station, TCP port, and selected queue for the system print queue target, and returns a non-200 response when the active target is unhealthy
 - Browser access to the HTTP server is CORS-enabled
 
 Incoming payloads are split into labels and forwarded as `job.PrintJob` units to the active target.
